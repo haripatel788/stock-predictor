@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en" class="h-full bg-slate-950">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock Predictor Studio</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef8ff',
+              100: '#d9edff',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8'
+            }
+          },
+          boxShadow: {
+            glow: '0 0 0 1px rgba(148,163,184,.25), 0 20px 65px rgba(15,23,42,.45)'
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="h-full text-slate-100">
+  <main class="min-h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div class="mx-auto max-w-6xl px-6 py-10 md:py-16">
+      <div class="mb-10 flex items-center justify-between gap-6">
+        <div>
+          <p class="mb-2 inline-flex rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-slate-300">ML Forecasting Dashboard</p>
+          <h1 class="text-3xl font-bold tracking-tight md:text-4xl">Stock Predictor Studio</h1>
+          <p class="mt-3 max-w-2xl text-slate-300">Forecast short-term prices with a scikit-learn model trained from free daily market data. Enter a ticker, pick your horizon, and generate results instantly.</p>
+        </div>
+      </div>
+
+      <section class="grid gap-6 lg:grid-cols-5">
+        <div class="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-glow">
+          <h2 class="text-xl font-semibold">New Prediction</h2>
+          <p class="mt-1 text-sm text-slate-400">Try symbols like AAPL, MSFT, TSLA, NVDA, AMD, META, AMZN.</p>
+          <form id="predict-form" class="mt-6 space-y-5">
+            <div>
+              <label for="symbol" class="mb-2 block text-sm font-medium text-slate-200">Ticker Symbol</label>
+              <input id="symbol" name="symbol" required maxlength="24" placeholder="AAPL" class="w-full rounded-xl border border-slate-700 bg-slate-950/60 px-4 py-3 text-base text-slate-100 outline-none ring-brand-500 transition focus:border-brand-500 focus:ring-2" />
+            </div>
+            <div>
+              <label for="horizon" class="mb-2 block text-sm font-medium text-slate-200">Prediction Horizon</label>
+              <input id="horizon" name="horizon" type="number" min="1" max="30" value="7" required class="w-full rounded-xl border border-slate-700 bg-slate-950/60 px-4 py-3 text-base text-slate-100 outline-none ring-brand-500 transition focus:border-brand-500 focus:ring-2" />
+            </div>
+            <button id="submit-btn" type="submit" class="w-full rounded-xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-500 disabled:cursor-wait disabled:opacity-60">Generate Forecast</button>
+          </form>
+          <div id="error" class="mt-4 hidden rounded-xl border border-rose-500/50 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"></div>
+        </div>
+
+        <div class="lg:col-span-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-glow">
+          <div class="flex items-center justify-between">
+            <h2 class="text-xl font-semibold">Forecast Output</h2>
+            <span id="status-pill" class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-medium text-slate-300">Waiting</span>
+          </div>
+
+          <div id="result" class="mt-6 hidden">
+            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div class="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-400">Symbol</p>
+                <p id="summary-symbol" class="mt-1 text-xl font-semibold"></p>
+              </div>
+              <div class="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-400">Last Close</p>
+                <p id="summary-last" class="mt-1 text-xl font-semibold"></p>
+              </div>
+              <div class="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-400">Model MAE</p>
+                <p id="summary-mae" class="mt-1 text-xl font-semibold"></p>
+              </div>
+              <div class="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-400">Data Source</p>
+                <p id="summary-source" class="mt-1 text-xl font-semibold"></p>
+              </div>
+            </div>
+
+            <div class="mt-6 overflow-hidden rounded-xl border border-slate-800">
+              <table class="min-w-full divide-y divide-slate-800">
+                <thead class="bg-slate-950/80">
+                  <tr>
+                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Date</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Predicted Close</th>
+                  </tr>
+                </thead>
+                <tbody id="forecast-body" class="divide-y divide-slate-800 bg-slate-900/40"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="empty-state" class="mt-8 rounded-xl border border-dashed border-slate-700 bg-slate-950/40 p-8 text-center text-slate-400">
+            Run a prediction to see confidence metrics and projected closes.
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const form = document.getElementById('predict-form')
+    const submitBtn = document.getElementById('submit-btn')
+    const errorBox = document.getElementById('error')
+    const result = document.getElementById('result')
+    const emptyState = document.getElementById('empty-state')
+    const statusPill = document.getElementById('status-pill')
+    const forecastBody = document.getElementById('forecast-body')
+
+    function readErrorMessage(data) {
+      if (!data) return 'Prediction failed'
+      if (typeof data.detail === 'string') return data.detail
+      if (Array.isArray(data.detail)) {
+        const first = data.detail[0]
+        if (first && typeof first.msg === 'string') return first.msg
+      }
+      return 'Prediction failed'
+    }
+
+    function setStatus(text, style) {
+      statusPill.textContent = text
+      statusPill.className = `rounded-full border px-3 py-1 text-xs font-medium ${style}`
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault()
+      errorBox.classList.add('hidden')
+      result.classList.add('hidden')
+      submitBtn.disabled = true
+      submitBtn.textContent = 'Generating...'
+      setStatus('Running', 'border-amber-600/50 bg-amber-500/10 text-amber-300')
+
+      const symbol = document.getElementById('symbol').value.trim()
+      const horizon_days = Number(document.getElementById('horizon').value)
+
+      try {
+        const response = await fetch('/api/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol, horizon_days })
+        })
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(readErrorMessage(data))
+        }
+
+        document.getElementById('summary-symbol').textContent = data.symbol
+        document.getElementById('summary-last').textContent = `$${Number(data.last_close).toFixed(2)}`
+        document.getElementById('summary-mae').textContent = Number(data.model_mae).toFixed(4)
+        document.getElementById('summary-source').textContent = data.data_source
+
+        forecastBody.innerHTML = ''
+        data.predicted_dates.forEach((date, index) => {
+          const row = document.createElement('tr')
+          row.className = 'hover:bg-slate-800/50 transition'
+          const dateCell = document.createElement('td')
+          dateCell.className = 'px-4 py-3 text-sm text-slate-200'
+          dateCell.textContent = date
+          const priceCell = document.createElement('td')
+          priceCell.className = 'px-4 py-3 text-sm font-semibold text-emerald-300'
+          priceCell.textContent = `$${Number(data.predicted_prices[index]).toFixed(2)}`
+          row.appendChild(dateCell)
+          row.appendChild(priceCell)
+          forecastBody.appendChild(row)
+        })
+
+        emptyState.classList.add('hidden')
+        result.classList.remove('hidden')
+        setStatus('Complete', 'border-emerald-600/50 bg-emerald-500/10 text-emerald-300')
+      } catch (err) {
+        errorBox.textContent = err.message
+        errorBox.classList.remove('hidden')
+        emptyState.classList.remove('hidden')
+        setStatus('Failed', 'border-rose-600/50 bg-rose-500/10 text-rose-300')
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = 'Generate Forecast'
+      }
+    })
+  </script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+    "devCommand": "uvicorn app.main:app",
+    "builds": [
+      {
+        "src": "app/main.py",
+        "use": "@vercel/python"
+      }
+    ],
+    "routes": [
+      {
+        "src": "/(static/.*)",
+        "dest": "/$1"
+      },
+      {
+        "src": "/(.*)",
+        "dest": "app/main.py"
+      }
+    ]
+  }
