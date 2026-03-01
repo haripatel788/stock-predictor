@@ -11,7 +11,7 @@
     <div class="mx-auto max-w-6xl px-6 py-12">
       <div class="flex items-center justify-between mb-12 border-b border-slate-800 pb-6">
         <div>
-          <h1 class="text-3xl font-bold tracking-tight text-white">Stock Predicton Model by <a href="https://haripatel788.github.io/" class="underline hover:text-emerald-400">Hari Patel</a></h1>
+          <h1 class="text-3xl font-bold tracking-tight text-white">Stock Prediction Model by <a href="https://haripatel788.github.io/" class="underline hover:text-emerald-400">Hari Patel</a></h1>
           <p class="mt-2 text-slate-400">Machine Learning Forecasting Pipeline</p>
         </div>
       </div>
@@ -67,7 +67,7 @@
                   <p id="summary-last" class="text-xl font-bold text-emerald-400 font-mono"></p>
                 </div>
                 <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 col-span-2 md:col-span-1">
-                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">Model Error (MAE)</p>
+                  <p class="text-xs text-slate-500 uppercase tracking-wider mb-1">1-Day Holdout MAE</p>
                   <p id="summary-mae" class="text-xl font-bold text-blue-400 font-mono"></p>
                 </div>
               </div>
@@ -139,8 +139,8 @@
 
         document.getElementById('summary-symbol').textContent = data.symbol;
         document.getElementById('summary-last').textContent = `$${data.last_close.toFixed(2)}`;
-        document.getElementById('summary-mae').textContent = data.model_mae.toFixed(4);
-        document.getElementById('data-source').textContent = `Source: ${data.data_source}`;
+        document.getElementById('summary-mae').textContent = `$${data.model_mae.toFixed(2)} (${data.model_mae_pct.toFixed(2)}%)`;
+        document.getElementById('data-source').textContent = `Source: ${data.data_source} | Baseline MAE: $${data.baseline_mae.toFixed(2)}`;
         document.getElementById('data-source').classList.remove('hidden');
 
         const tbody = document.getElementById('forecast-body');

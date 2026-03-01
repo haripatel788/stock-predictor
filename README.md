@@ -39,9 +39,16 @@ Response body:
 ```json
 {
   "symbol": "AAPL",
+  "data_source": "Stooq",
   "last_close": 235.1,
   "predicted_prices": [236.2, 236.7],
   "predicted_dates": ["2026-02-13", "2026-02-16"],
-  "model_mae": 2.0831
+  "model_mae": 2.0831,
+  "model_mae_pct": 0.89,
+  "baseline_mae": 2.4512
 }
 ```
+
+`model_mae` is the one-day holdout MAE (in dollars).  
+`model_mae_pct` is one-day holdout MAE in percent.  
+`baseline_mae` is the one-day MAE from a naive baseline (`tomorrow = today`).
