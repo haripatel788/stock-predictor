@@ -22,6 +22,11 @@ from pydantic import BaseModel, Field
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import train_test_split
+from dotenv import load_dotenv
+load_dotenv()
+
+from app.sentiment import load_sentiment_cache, get_historical_sentiment, score_headlines_gemini, compute_weighted_sentiment
+from app.news import fetch_live_headlines
 
 class PredictionRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=24)
@@ -65,6 +70,11 @@ FEATURE_COLS = [
     "intraday_range",
     "high_close_ratio",
     "low_close_ratio",
+    "daily_sentiment",
+    "sentiment_3d_avg",
+    "sentiment_momentum",
+    "weighted_sentiment",
+    "sentiment_volume",
 ]
 
 
@@ -198,6 +208,34 @@ def build_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
     work["intraday_range"] = (work["high"] - work["low"]) / work["close"]
     work["high_close_ratio"] = work["high"] / work["close"] - 1.0
     work["low_close_ratio"] = work["low"] / work["close"] - 1.0
+
+    work["daily_sentiment"] = 0.0
+    work["sentiment_3d_avg"] = 0.0
+    work["sentiment_momentum"] = 0.0
+    work["weighted_sentiment"] = 0.0
+    work["sentiment_volume"] = 0.0
+    try:
+        cache = load_sentiment_cache()
+        if not cache.empty and "date" in work.columns:
+            work["_date_key"] = pd.to_datetime(work["date"]).dt.date
+            cache_renamed = cache.rename(columns={"stock": "_stock_key", "date": "_date_key"})
+
+            ticker = getattr(work, "_ticker", None)
+            if ticker:
+                ticker_cache = cache_renamed[cache_renamed["_stock_key"] == ticker][
+                    ["_date_key", "daily_sentiment", "sentiment_3d_avg", "sentiment_momentum"]
+                ]
+                work = work.merge(ticker_cache, on="_date_key", how="left", suffixes=("_old", ""))
+                for col in ["daily_sentiment", "sentiment_3d_avg", "sentiment_momentum"]:
+                    if f"{col}_old" in work.columns:
+                        work[col] = work[col].fillna(0.0)
+                        work = work.drop(columns=[f"{col}_old"])
+                    else:
+                        work[col] = work[col].fillna(0.0)
+            work = work.drop(columns=["_date_key"], errors="ignore")
+    except Exception:
+        pass 
+
     return work
 
 
@@ -248,13 +286,15 @@ def train_model(feature_df: pd.DataFrame, target_cols: list[str]) -> tuple[Rando
     final_model = RandomForestRegressor(**params)
     final_model.fit(x, y)
     return final_model, mae, mae_pct, baseline_mae, FEATURE_COLS
-
-def forecast_next_days(history_df: pd.DataFrame, model: RandomForestRegressor, feature_cols: list[str], horizon_days: int) -> tuple[list[float], list[str]]:
+def forecast_next_days(history_df: pd.DataFrame, model: RandomForestRegressor, feature_cols: list[str], horizon_days: int, weighted_sentiment: float = 0.0, sentiment_volume: float = 0.0) -> tuple[list[float], list[str]]:
     history = history_df.copy()
     prices: list[float] = []
     dates: list[str] = []
     current_date = history["date"].iloc[-1]
     latest = latest_feature_vector(history)
+    # Inject live sentiment into the feature vector
+    latest["weighted_sentiment"] = weighted_sentiment
+    latest["sentiment_volume"] = sentiment_volume
     predicted_returns = np.asarray(model.predict(latest[feature_cols].to_frame().T), dtype=float)
     if predicted_returns.ndim == 0:
         predicted_returns = predicted_returns.reshape(1)
@@ -288,18 +328,39 @@ def root() -> FileResponse:
 @app.post("/api/predict", response_model=PredictionResponse)
 def predict(payload: PredictionRequest) -> PredictionResponse:
     try:
-        raw_df, source = fetch_history(payload.symbol)
+        symbol = normalize_symbol(payload.symbol)
+        raw_df, source = fetch_history(symbol)
+
+        raw_df._ticker = symbol
+
         feature_df, target_cols = build_training_features(raw_df, payload.horizon_days)
         if len(feature_df) < 80:
             raise ValueError("Not enough clean data after preprocessing")
         model, mae, mae_pct, baseline_mae, feature_cols = train_model(feature_df, target_cols)
-        prices, dates = forecast_next_days(raw_df, model, feature_cols, payload.horizon_days)
+
+        try:
+            headlines = fetch_live_headlines(symbol)
+            scored = score_headlines_gemini(headlines, symbol) if headlines else []
+            weighted_sentiment = compute_weighted_sentiment(scored)
+            recent_volume = float(raw_df["volume"].iloc[-1])
+            avg_volume = float(raw_df["volume"].tail(20).mean())
+            volume_ratio = recent_volume / avg_volume if avg_volume > 0 else 1.0
+            sentiment_volume = weighted_sentiment * volume_ratio
+        except Exception:
+            weighted_sentiment = 0.0
+            sentiment_volume = 0.0
+
+        prices, dates = forecast_next_days(
+            raw_df, model, feature_cols, payload.horizon_days,
+            weighted_sentiment=weighted_sentiment,
+            sentiment_volume=sentiment_volume,
+        )
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return PredictionResponse(
-        symbol=normalize_symbol(payload.symbol),
+        symbol=symbol,
         data_source=source,
         last_close=round(float(raw_df["close"].iloc[-1]), 2),
         predicted_prices=prices,
