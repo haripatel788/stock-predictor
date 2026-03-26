@@ -32,7 +32,8 @@ def make_history(end_date: str, periods: int = 80) -> pd.DataFrame:
 
 def test_forecast_uses_most_recent_day_features():
     history = make_history("2025-02-14")
-    prices, dates = forecast_next_days(history, ReturnFromCloseModel(), FEATURE_COLS, 1)
+    # Pass ticker="" so no sentiment cache lookup is attempted
+    prices, dates = forecast_next_days(history, ReturnFromCloseModel(), FEATURE_COLS, 1, ticker="")
 
     last_close = history["close"].iloc[-1]
     assert prices[0] == round(last_close * (1.0 + (last_close / 10000.0)), 2)
@@ -41,7 +42,7 @@ def test_forecast_uses_most_recent_day_features():
 
 def test_forecast_skips_nyse_holidays():
     history = make_history("2025-12-24")
-    prices, dates = forecast_next_days(history, ConstantModel(), FEATURE_COLS, 1)
+    prices, dates = forecast_next_days(history, ConstantModel(), FEATURE_COLS, 1, ticker="")
 
     assert prices[0] == round(history["close"].iloc[-1], 2)
     assert dates[0] == "2025-12-26"
