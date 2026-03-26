@@ -1,13 +1,16 @@
 import os
 import json
 import pandas as pd
-from google import genai
 from pathlib import Path
-
 
 _cache: pd.DataFrame | None = None
 
+
 def load_sentiment_cache() -> pd.DataFrame:
+    """
+    Loads sentiment_cache.csv into memory once at startup.
+    Subsequent calls return the cached DataFrame instantly.
+    """
     global _cache
     if _cache is not None:
         return _cache
@@ -15,16 +18,22 @@ def load_sentiment_cache() -> pd.DataFrame:
     cache_path = Path(__file__).parent.parent / "data" / "sentiment_cache.csv"
 
     if not cache_path.exists():
-        _cache = pd.DataFrame(columns=["stock", "date", "daily_sentiment", "sentiment_3d_avg", "sentiment_momentum"])
+        _cache = pd.DataFrame(
+            columns=["stock", "date", "daily_sentiment", "sentiment_3d_avg", "sentiment_momentum"]
+        )
         return _cache
 
-    _cache = pd.read_csv(cache_path, parse_dates=["date"])
+    _cache = pd.read_csv(cache_path)
     _cache["date"] = pd.to_datetime(_cache["date"]).dt.date
     print(f"Sentiment cache loaded: {len(_cache):,} rows, {_cache['stock'].nunique()} tickers")
     return _cache
 
 
 def get_historical_sentiment(ticker: str, date) -> dict:
+    """
+    Looks up historical sentiment for a ticker on a specific date.
+    Returns zeros if no data found — never raises.
+    """
     cache = load_sentiment_cache()
 
     if cache.empty:
@@ -42,39 +51,59 @@ def get_historical_sentiment(ticker: str, date) -> dict:
     }
 
 
-
 def score_headlines_gemini(headlines: list[str], ticker: str) -> list[dict]:
+    """
+    Scores a list of live headlines using the Gemini API.
+    Returns list of dicts: {headline, sentiment, relevance, reasoning}
+    sentiment: -1.0 (very bearish) to +1.0 (very bullish)
+    relevance: 0.0 (noise) to 1.0 (directly material to stock price)
+    Falls back to 0.0 scores gracefully on any error.
+    """
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        return [{"headline": h, "sentiment": 0.0, "relevance": 0.0, "reasoning": "No API key"} for h in headlines]
+        return [
+            {"headline": h, "sentiment": 0.0, "relevance": 0.0, "reasoning": "No API key configured"}
+            for h in headlines
+        ]
+
+    # Import here so the module loads even if google-genai is not installed
+    try:
+        from google import genai
+    except ImportError:
+        return [
+            {"headline": h, "sentiment": 0.0, "relevance": 0.0, "reasoning": "google-genai not installed"}
+            for h in headlines
+        ]
 
     client = genai.Client(api_key=api_key)
     results = []
 
     for headline in headlines:
         try:
-            prompt = f"""You are a financial analyst. Score this news headline for {ticker} stock.
-
-Headline: "{headline}"
-
-Return ONLY a valid JSON object with no extra text, no markdown, no backticks:
-{{"sentiment": 0.0, "relevance": 0.0, "reasoning": "one sentence explanation"}}
-
-Rules:
-- sentiment: -1.0 (very bearish) to 1.0 (very bullish), 0.0 = neutral
-- relevance: 0.0 (unrelated noise) to 1.0 (directly impacts stock price)
-- reasoning: one short sentence explaining your score"""
+            prompt = (
+                f'You are a financial analyst. Score this news headline for {ticker} stock.\n\n'
+                f'Headline: "{headline}"\n\n'
+                f'Return ONLY a valid JSON object with no extra text, no markdown, no backticks:\n'
+                f'{{"sentiment": 0.0, "relevance": 0.0, "reasoning": "one sentence explanation"}}\n\n'
+                f'Rules:\n'
+                f'- sentiment: -1.0 (very bearish) to 1.0 (very bullish), 0.0 = neutral\n'
+                f'- relevance: 0.0 (unrelated noise) to 1.0 (directly impacts stock price)\n'
+                f'- reasoning: one short sentence explaining your score'
+            )
 
             response = client.models.generate_content(
                 model="gemini-2.0-flash",
-                contents=prompt
+                contents=prompt,
             )
             text = response.text.strip()
 
+            # Strip markdown code fences if Gemini wraps in them
             if text.startswith("```"):
-                text = text.split("```")[1]
+                parts = text.split("```")
+                text = parts[1] if len(parts) > 1 else text
                 if text.startswith("json"):
                     text = text[4:]
+            text = text.strip()
 
             parsed = json.loads(text)
             results.append({
@@ -84,18 +113,23 @@ Rules:
                 "reasoning": str(parsed.get("reasoning", "")),
             })
 
-        except Exception as e:
+        except Exception:
             results.append({
                 "headline": headline,
                 "sentiment": 0.0,
                 "relevance": 0.0,
-                "reasoning": "Scoring unavailable"
+                "reasoning": "Scoring unavailable",
             })
 
     return results
 
 
 def compute_weighted_sentiment(scored_headlines: list[dict]) -> float:
+    """
+    Combines scored headlines into a single weighted sentiment value.
+    Each headline's contribution = sentiment * relevance.
+    Low-relevance articles barely move the needle; high-relevance ones drive the score.
+    """
     if not scored_headlines:
         return 0.0
 
