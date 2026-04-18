@@ -23,3 +23,12 @@ def test_predict_rejects_invalid_ticker():
         headers=UA,
     )
     assert response.status_code == 400
+
+
+def test_bootstrap_public():
+    response = client.get("/api/bootstrap", headers=UA)
+    assert response.status_code == 200
+    data = response.json()
+    assert "auth" in data and "tier_limits" in data
+    assert "enabled" in data["auth"]
+    assert "public" in data["tier_limits"]

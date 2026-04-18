@@ -112,18 +112,28 @@
     }
     .masthead-nav {
       display: flex;
-      gap: 32px;
+      gap: 8px 28px;
+      flex-wrap: wrap;
+      align-items: flex-end;
     }
-    .masthead-nav a {
+    .masthead-nav .nav-tab {
       font-family: var(--mono);
       font-size: 10px;
       letter-spacing: 0.14em;
       color: var(--text3);
-      text-decoration: none;
       text-transform: uppercase;
-      transition: color 0.15s;
+      transition: color 0.15s, border-color 0.15s;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      padding: 0 0 4px;
+      cursor: pointer;
     }
-    .masthead-nav a:hover { color: var(--text); }
+    .masthead-nav .nav-tab:hover { color: var(--text); }
+    .masthead-nav .nav-tab.active {
+      color: var(--ink);
+      border-bottom-color: var(--ink);
+    }
     .masthead-status {
       display: flex;
       align-items: center;
@@ -646,6 +656,122 @@
       text-align: right;
     }
 
+    .sb-panel {
+      display: none;
+      flex-direction: column;
+      gap: 36px;
+      flex: 1;
+    }
+    .sb-panel.active { display: flex; }
+
+    .app-tab-main {
+      flex: 1;
+      display: none;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .app-tab-main.active { display: flex; }
+
+    .page-intro {
+      padding: 28px 40px 0;
+      border-bottom: 1px solid var(--rule2);
+    }
+    .page-intro h2 {
+      font-family: var(--serif);
+      font-size: 22px;
+      font-style: italic;
+      color: var(--ink);
+      margin-bottom: 8px;
+    }
+    .page-intro p {
+      font-size: 13px;
+      color: var(--text3);
+      font-weight: 300;
+      max-width: 560px;
+      line-height: 1.65;
+    }
+
+    .data-tbl {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .data-tbl thead tr { border-bottom: 2px solid var(--ink); }
+    .data-tbl th {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      color: var(--text3);
+      text-transform: uppercase;
+      padding: 0 12px 10px 0;
+      text-align: left;
+      font-weight: 400;
+    }
+    .data-tbl td {
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 12px 12px 12px 0;
+      border-bottom: 1px solid var(--rule);
+      color: var(--text2);
+    }
+    .data-tbl .sym-cell {
+      font-weight: 500;
+      color: var(--ink);
+      letter-spacing: 0.06em;
+    }
+    .ghost-btn {
+      background: white;
+      border: 1px solid var(--rule2);
+      border-radius: 2px;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 8px 14px;
+      cursor: pointer;
+      color: var(--text2);
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .ghost-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .ghost-btn.danger:hover {
+      border-color: var(--red);
+      color: var(--red);
+    }
+
+    .auth-stack {
+      max-width: 400px;
+      padding: 28px 40px 48px;
+    }
+    .auth-stack .form-field { margin-bottom: 16px; }
+    .auth-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .tier-badge {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border: 1px solid var(--rule2);
+      border-radius: 2px;
+      color: var(--accent);
+      margin-top: 8px;
+    }
+    .muted-panel {
+      padding: 40px;
+      font-family: var(--sans);
+      font-size: 14px;
+      color: var(--text3);
+      font-weight: 300;
+      line-height: 1.7;
+    }
+
     @media (max-width: 860px) {
       .body-wrap { grid-template-columns: 1fr; }
       .sidebar { border-right: none; border-bottom: 1px solid var(--rule2); }
@@ -668,11 +794,11 @@
 
 <div class="masthead">
   <div class="masthead-top">
-    <nav class="masthead-nav">
-      <a href="#">Equities</a>
-      <a href="#">Fixed Income</a>
-      <a href="#">Commodities</a>
-      <a href="#">ML Models</a>
+    <nav class="masthead-nav" id="mainNav" aria-label="Primary">
+      <button type="button" class="nav-tab active" data-tab="forecast">Forecast</button>
+      <button type="button" class="nav-tab" data-tab="watchlist">Watchlist</button>
+      <button type="button" class="nav-tab" data-tab="history">History</button>
+      <button type="button" class="nav-tab" data-tab="account">Account</button>
     </nav>
     <div class="masthead-status">
       <div class="status-pip"></div>
@@ -694,6 +820,8 @@
 <div class="body-wrap">
 
   <aside class="sidebar">
+
+    <div class="sb-panel active" id="sbForecast" data-sb="forecast">
 
     <div class="sidebar-section">
       <div class="sidebar-heading">Instrument</div>
@@ -732,7 +860,7 @@
       <div class="sidebar-heading">Assistant</div>
       <p style="font-size:12px;color:var(--text3);line-height:1.5;margin-bottom:12px;font-weight:300;">
         Plain-English Q&amp;A; backend calls the same forecast engine via Groq tool-calling.
-        Locally: set <code style="font-size:11px;">CHAT_ALLOW_PUBLIC=1</code> in <code style="font-size:11px;">.env</code>, or send a Supabase <code style="font-size:11px;">Bearer</code> token.
+        Sign in on <strong>Account</strong> for chat in production, or set <code style="font-size:11px;">CHAT_ALLOW_PUBLIC=1</code> locally for anonymous chat.
       </p>
       <textarea id="chatInput" class="form-input" style="min-height:72px;font-size:13px;resize:vertical;letter-spacing:0;" rows="3" placeholder="e.g. What’s the 5-day outlook for Apple?"></textarea>
       <button type="button" class="run-btn" id="chatSend" style="margin-top:10px;">Ask assistant</button>
@@ -764,14 +892,55 @@
         </div>
         <div class="model-row">
           <span class="model-key">Max horizon</span>
-          <span class="model-val">30 days</span>
+          <span class="model-val" id="modelMaxHorizonLabel">7 days (guest)</span>
         </div>
+      </div>
+    </div>
+
+    </div>
+
+    <div class="sb-panel" id="sbWatchlist" data-sb="watchlist">
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Add symbol</div>
+        <div class="form-field">
+          <label class="form-label" for="wlAddInput">Ticker</label>
+          <input id="wlAddInput" class="form-input" type="text" maxlength="10" placeholder="NVDA" autocomplete="off" spellcheck="false" />
+        </div>
+        <button type="button" class="run-btn" id="wlAddBtn">Add to watchlist</button>
+        <div class="error-msg" id="wlAddErr" style="margin-top:10px;"></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Quick run</div>
+        <p style="font-size:12px;color:var(--text3);line-height:1.55;font-weight:300;">
+          Select a row in the main panel and use <strong style="font-weight:500;color:var(--text2);">Run forecast</strong> from the Forecast tab, or click <em>Forecast</em> in the table.
+        </p>
+      </div>
+    </div>
+
+    <div class="sb-panel" id="sbHistory" data-sb="history">
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Saved runs</div>
+        <p style="font-size:12px;color:var(--text3);line-height:1.55;font-weight:300;">
+          Each successful forecast while signed in is stored in your Supabase project for this account.
+        </p>
+        <button type="button" class="run-btn" id="histRefreshBtn" style="margin-top:12px;">Refresh list</button>
+      </div>
+    </div>
+
+    <div class="sb-panel" id="sbAccount" data-sb="account">
+      <div class="sidebar-section">
+        <div class="sidebar-heading">Access</div>
+        <p style="font-size:12px;color:var(--text3);line-height:1.55;font-weight:300;">
+          Signed-in users get higher daily limits and longer horizons. Tier is stored on your <code style="font-size:11px;">profiles</code> row (default <code style="font-size:11px;">free</code>).
+        </p>
       </div>
     </div>
 
   </aside>
 
   <main class="main-content">
+
+    <div class="app-tab-main active" id="panelForecast" data-panel="forecast">
 
     <div class="state-empty" id="stateEmpty">
       <div class="empty-rule"></div>
@@ -845,6 +1014,87 @@
 
     </div>
 
+    </div>
+
+    <div class="app-tab-main" id="panelWatchlist" data-panel="watchlist">
+      <div class="page-intro">
+        <h2>Watchlist</h2>
+        <p>Track tickers you care about. Add symbols from the sidebar, remove with the button on each row, or jump straight into a forecast.</p>
+      </div>
+      <div class="table-section" style="flex:1;padding-top:20px;">
+        <div class="muted-panel" id="watchlistGate" style="display:none;padding-top:0;">
+          Sign in on the <strong>Account</strong> tab and ensure the server has Supabase keys configured to use watchlists.
+        </div>
+        <table class="data-tbl" id="watchlistTable" style="display:none;">
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Added</th>
+              <th style="text-align:right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="watchlistBody"></tbody>
+        </table>
+        <p class="muted-panel" id="watchlistEmpty" style="display:none;padding-top:12px;">No symbols yet. Add one from the sidebar.</p>
+      </div>
+    </div>
+
+    <div class="app-tab-main" id="panelHistory" data-panel="history">
+      <div class="page-intro">
+        <h2>Forecast history</h2>
+        <p>Read-only log of forecasts you generated while authenticated. Data lives in Supabase table <code style="font-size:11px;">forecasts</code>.</p>
+      </div>
+      <div class="table-section" style="flex:1;padding-top:20px;">
+        <div class="muted-panel" id="historyGate" style="display:none;padding-top:0;">
+          Sign in on the <strong>Account</strong> tab to load saved forecasts.
+        </div>
+        <table class="data-tbl" id="historyTable" style="display:none;">
+          <thead>
+            <tr>
+              <th>When (UTC)</th>
+              <th>Symbol</th>
+              <th>Hz</th>
+              <th>Last close</th>
+              <th>MAE</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody"></tbody>
+        </table>
+        <p class="muted-panel" id="historyEmpty" style="display:none;padding-top:12px;">No saved forecasts yet. Run one from the Forecast tab while signed in.</p>
+      </div>
+    </div>
+
+    <div class="app-tab-main" id="panelAccount" data-panel="account">
+      <div class="page-intro">
+        <h2>Account</h2>
+        <p>Supabase Auth handles passwords. The API never sees your password—only your session JWT on each request.</p>
+      </div>
+      <div class="auth-stack" id="authDisabled" style="display:none;">
+        <p class="muted-panel" style="padding:0;">The host has not exposed Supabase browser keys. Add <code style="font-size:11px;">SUPABASE_URL</code> and <code style="font-size:11px;">SUPABASE_ANON_KEY</code> to the server environment, then reload.</p>
+      </div>
+      <div class="auth-stack" id="authSignedOut">
+        <div class="form-field">
+          <label class="form-label" for="accEmail">Email</label>
+          <input id="accEmail" class="form-input" type="email" autocomplete="username" placeholder="you@example.com" style="text-transform:none;font-size:15px;" />
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="accPassword">Password</label>
+          <input id="accPassword" class="form-input" type="password" autocomplete="current-password" placeholder="••••••••" style="text-transform:none;font-size:15px;" />
+        </div>
+        <div class="error-msg" id="accErr" style="display:none;"></div>
+        <div class="auth-row">
+          <button type="button" class="run-btn" id="accSignIn" style="flex:1;min-width:120px;">Sign in</button>
+          <button type="button" class="ghost-btn" id="accSignUp" style="flex:1;min-width:120px;">Create account</button>
+        </div>
+      </div>
+      <div class="auth-stack" id="authSignedIn" style="display:none;">
+        <p style="font-family:var(--mono);font-size:12px;color:var(--text2);" id="accEmailLine"></p>
+        <span class="tier-badge" id="accTierBadge">tier</span>
+        <p style="margin-top:16px;font-size:13px;color:var(--text3);line-height:1.6;font-weight:300;" id="accLimitsLine"></p>
+        <button type="button" class="ghost-btn danger" id="accSignOut" style="margin-top:20px;">Sign out</button>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -864,9 +1114,17 @@
   </div>
 </footer>
 
-<script>
+<script type="module">
+  import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/+esm';
+
+  let bootstrap = /** @type {any} */ (null);
+  let supa = /** @type {ReturnType<typeof createClient> | null} */ (null);
+  let accessToken = /** @type {string | null} */ (null);
+  let profile = /** @type {any} */ (null);
+  let currentTab = 'forecast';
+
   document.getElementById('mastheadDate').textContent = new Date().toLocaleDateString('en-US', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   });
 
   (function setMarketStatus() {
@@ -887,30 +1145,136 @@
   })();
 
   const TAPE = [
-    {sym:'SPY',  p:'542.18', c:'+3.21', pct:'+0.60%', up:true},
-    {sym:'QQQ',  p:'461.74', c:'-1.08', pct:'-0.23%', up:false},
-    {sym:'AAPL', p:'252.96', c:'+1.23', pct:'+0.49%', up:true},
-    {sym:'MSFT', p:'415.32', c:'-2.18', pct:'-0.52%', up:false},
-    {sym:'NVDA', p:'876.54', c:'+12.4', pct:'+1.43%', up:true},
-    {sym:'TSLA', p:'173.40', c:'-4.52', pct:'-2.54%', up:false},
-    {sym:'AMZN', p:'196.18', c:'+0.87', pct:'+0.44%', up:true},
-    {sym:'GOOGL', p:'171.90', c:'-1.10', pct:'-0.64%', up:false},
-    {sym:'META',  p:'586.22', c:'+7.34', pct:'+1.27%', up:true},
-    {sym:'JPM',   p:'248.75', c:'+1.56', pct:'+0.63%', up:true},
-    {sym:'AMD',   p:'108.32', c:'-3.20', pct:'-2.87%', up:false},
-    {sym:'NFLX',  p:'998.44', c:'+14.2', pct:'+1.44%', up:true},
-    {sym:'DIA',   p:'418.36', c:'+0.92', pct:'+0.22%', up:true},
-    {sym:'IWM',   p:'197.84', c:'-0.66', pct:'-0.33%', up:false},
+    { sym: 'SPY', p: '542.18', c: '+3.21', pct: '+0.60%', up: true },
+    { sym: 'QQQ', p: '461.74', c: '-1.08', pct: '-0.23%', up: false },
+    { sym: 'AAPL', p: '252.96', c: '+1.23', pct: '+0.49%', up: true },
+    { sym: 'MSFT', p: '415.32', c: '-2.18', pct: '-0.52%', up: false },
+    { sym: 'NVDA', p: '876.54', c: '+12.4', pct: '+1.43%', up: true },
+    { sym: 'TSLA', p: '173.40', c: '-4.52', pct: '-2.54%', up: false },
+    { sym: 'AMZN', p: '196.18', c: '+0.87', pct: '+0.44%', up: true },
+    { sym: 'GOOGL', p: '171.90', c: '-1.10', pct: '-0.64%', up: false },
+    { sym: 'META', p: '586.22', c: '+7.34', pct: '+1.27%', up: true },
+    { sym: 'JPM', p: '248.75', c: '+1.56', pct: '+0.63%', up: true },
+    { sym: 'AMD', p: '108.32', c: '-3.20', pct: '-2.87%', up: false },
+    { sym: 'NFLX', p: '998.44', c: '+14.2', pct: '+1.44%', up: true },
+    { sym: 'DIA', p: '418.36', c: '+0.92', pct: '+0.22%', up: true },
+    { sym: 'IWM', p: '197.84', c: '-0.66', pct: '-0.33%', up: false },
   ];
   (function buildTape() {
     const wrap = document.getElementById('tickerScroll');
-    [...TAPE, ...TAPE].forEach(t => {
+    [...TAPE, ...TAPE].forEach((t) => {
       const el = document.createElement('div');
       el.className = 'ticker-item';
-      el.innerHTML = `<span class="sym">${t.sym}</span><span>${t.p}</span><span class="${t.up?'up':'dn'}">${t.c} (${t.pct})</span>`;
+      el.innerHTML = `<span class="sym">${t.sym}</span><span>${t.p}</span><span class="${t.up ? 'up' : 'dn'}">${t.c} (${t.pct})</span>`;
       wrap.appendChild(el);
     });
   })();
+
+  function formatApiError(data, status) {
+    if (!data) return `HTTP ${status}`;
+    const d = data.detail;
+    if (typeof d === 'string') return d;
+    if (Array.isArray(d)) return d.map((x) => x.msg || JSON.stringify(x)).join('; ');
+    try {
+      return JSON.stringify(data);
+    } catch {
+      return `HTTP ${status}`;
+    }
+  }
+
+  function authHeadersJson() {
+    const h = { 'Content-Type': 'application/json' };
+    if (accessToken) h['Authorization'] = `Bearer ${accessToken}`;
+    return h;
+  }
+
+  async function apiFetch(path, opts = {}) {
+    const headers = { ...authHeadersJson(), ...(opts.headers || {}) };
+    return fetch(path, { ...opts, headers });
+  }
+
+  function normalizeTickerInput(raw) {
+    let v = String(raw || '').toUpperCase().replace(/[^A-Z0-9.\-^]/g, '');
+    const caret = v.indexOf('^');
+    if (caret > 0) v = v.replace(/\^/g, '');
+    if (v.includes('^') && v.indexOf('^') !== 0) v = v.replace(/\^/g, '');
+    return v.slice(0, 10);
+  }
+
+  function tierLimitsActive() {
+    if (profile && profile.limits) return profile.limits;
+    return bootstrap?.tier_limits?.public || { max_horizon: 7, forecasts_per_day: 3 };
+  }
+
+  function applyHorizonLimits() {
+    const range = document.getElementById('horizonRange');
+    const horizonNum = document.getElementById('horizonNum');
+    const lim = tierLimitsActive();
+    const max = Math.min(30, Math.max(1, lim.max_horizon || 7));
+    range.max = String(max);
+    let v = parseInt(range.value, 10);
+    if (v > max) {
+      v = max;
+      range.value = String(v);
+    }
+    horizonNum.textContent = String(v);
+    const tierLabel = accessToken && profile ? String(profile.tier || 'free') : 'guest';
+    document.getElementById('modelMaxHorizonLabel').textContent = `${max} days (${tierLabel})`;
+  }
+
+  async function refreshProfile() {
+    profile = null;
+    if (!accessToken) {
+      applyHorizonLimits();
+      renderAccountPanel();
+      return;
+    }
+    try {
+      const r = await apiFetch('/api/users/me');
+      const j = await r.json().catch(() => null);
+      if (r.ok && j) profile = j;
+    } catch {
+      profile = null;
+    }
+    applyHorizonLimits();
+    renderAccountPanel();
+  }
+
+  function renderAccountPanel() {
+    const authOn = bootstrap?.auth?.enabled;
+    document.getElementById('authDisabled').style.display = authOn ? 'none' : 'block';
+    document.getElementById('authSignedOut').style.display = authOn && !accessToken ? 'block' : 'none';
+    document.getElementById('authSignedIn').style.display = authOn && accessToken ? 'block' : 'none';
+    if (accessToken && profile) {
+      document.getElementById('accEmailLine').textContent = profile.email || profile.id || '—';
+      document.getElementById('accTierBadge').textContent = `Tier · ${profile.tier || 'free'}`;
+      const L = profile.limits || {};
+      const reset = profile.forecasts_today_reset || '—';
+      document.getElementById('accLimitsLine').textContent =
+        `Forecast runs today: ${profile.forecasts_today ?? 0} / ${L.forecasts_per_day ?? '—'} (counter date: ${reset}). Max horizon: ${L.max_horizon ?? '—'} trading days.`;
+    }
+  }
+
+  function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.nav-tab').forEach((btn) => {
+      btn.classList.toggle('active', btn.getAttribute('data-tab') === tab);
+    });
+    document.querySelectorAll('.sb-panel').forEach((p) => {
+      p.classList.toggle('active', p.getAttribute('data-sb') === tab);
+    });
+    document.querySelectorAll('.app-tab-main').forEach((p) => {
+      p.classList.toggle('active', p.getAttribute('data-panel') === tab);
+    });
+    if (tab === 'watchlist') loadWatchlist();
+    if (tab === 'history') loadHistory();
+    if (tab === 'account') renderAccountPanel();
+  }
+
+  document.getElementById('mainNav').addEventListener('click', (e) => {
+    const t = e.target && e.target.closest ? e.target.closest('[data-tab]') : null;
+    if (t) switchTab(t.getAttribute('data-tab'));
+  });
 
   const range = document.getElementById('horizonRange');
   const horizonNum = document.getElementById('horizonNum');
@@ -918,18 +1282,20 @@
 
   const symbolInput = document.getElementById('symbolInput');
   function normalizeTickerField() {
-    let v = symbolInput.value.toUpperCase().replace(/[^A-Z0-9.\-^]/g, '');
-    const caret = v.indexOf('^');
-    if (caret > 0) v = v.replace(/\^/g, '');
-    if (v.includes('^') && v.indexOf('^') !== 0) v = v.replace(/\^/g, '');
-    symbolInput.value = v.slice(0, 10);
+    symbolInput.value = normalizeTickerInput(symbolInput.value);
   }
   symbolInput.addEventListener('blur', normalizeTickerField);
-  symbolInput.addEventListener('keydown', e => { if (e.key === 'Enter') { normalizeTickerField(); runForecast(); } });
+  symbolInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      normalizeTickerField();
+      runForecast();
+    }
+  });
+
   function showState(s) {
-    document.getElementById('stateEmpty').style.display   = s === 'empty'   ? 'flex'   : 'none';
-    document.getElementById('stateLoading').style.display = s === 'loading' ? 'flex'   : 'none';
-    document.getElementById('stateResults').style.display = s === 'results' ? 'flex'   : 'none';
+    document.getElementById('stateEmpty').style.display = s === 'empty' ? 'flex' : 'none';
+    document.getElementById('stateLoading').style.display = s === 'loading' ? 'flex' : 'none';
+    document.getElementById('stateResults').style.display = s === 'results' ? 'flex' : 'none';
   }
 
   function drawChart(prices, lastClose) {
@@ -937,96 +1303,99 @@
     svg.innerHTML = '';
     const all = [lastClose, ...prices];
     if (all.length < 2) return;
-    const mn = Math.min(...all), mx = Math.max(...all);
+    const mn = Math.min(...all);
+    const mx = Math.max(...all);
     const pad = (mx - mn) * 0.12 || 2;
-    const lo = mn - pad, hi = mx + pad;
-    const W = 800, H = 88;
-    const px = i => (i / (all.length - 1)) * W;
-    const py = v => H - ((v - lo) / (hi - lo)) * (H - 8) - 4;
-
-    const pts = all.map((v,i) => `${px(i).toFixed(1)},${py(v).toFixed(1)}`).join(' ');
+    const lo = mn - pad;
+    const hi = mx + pad;
+    const W = 800;
+    const H = 88;
+    const px = (i) => (i / (all.length - 1)) * W;
+    const py = (v) => H - ((v - lo) / (hi - lo)) * (H - 8) - 4;
+    const pts = all.map((v, i) => `${px(i).toFixed(1)},${py(v).toFixed(1)}`).join(' ');
     for (let i = 1; i < 4; i++) {
       const yg = (H / 4) * i;
-      const line = document.createElementNS('http://www.w3.org/2000/svg','line');
-      line.setAttribute('x1','0'); line.setAttribute('x2', W);
-      line.setAttribute('y1', yg); line.setAttribute('y2', yg);
-      line.setAttribute('stroke','#d8d5ce'); line.setAttribute('stroke-width','0.5');
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', '0');
+      line.setAttribute('x2', W);
+      line.setAttribute('y1', yg);
+      line.setAttribute('y2', yg);
+      line.setAttribute('stroke', '#d8d5ce');
+      line.setAttribute('stroke-width', '0.5');
       svg.appendChild(line);
     }
     const sepX = px(0).toFixed(1);
-    const sep = document.createElementNS('http://www.w3.org/2000/svg','line');
-    sep.setAttribute('x1', sepX); sep.setAttribute('x2', sepX);
-    sep.setAttribute('y1','0'); sep.setAttribute('y2', H);
-    sep.setAttribute('stroke','#aaa'); sep.setAttribute('stroke-width','1');
-    sep.setAttribute('stroke-dasharray','4,3');
+    const sep = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    sep.setAttribute('x1', sepX);
+    sep.setAttribute('x2', sepX);
+    sep.setAttribute('y1', '0');
+    sep.setAttribute('y2', H);
+    sep.setAttribute('stroke', '#aaa');
+    sep.setAttribute('stroke-width', '1');
+    sep.setAttribute('stroke-dasharray', '4,3');
     svg.appendChild(sep);
-    const area = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    const area = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
     area.setAttribute('points', `0,${H} ${pts} ${W},${H}`);
     area.setAttribute('fill', 'rgba(26,58,92,0.07)');
     svg.appendChild(area);
-    const line = document.createElementNS('http://www.w3.org/2000/svg','polyline');
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
     line.setAttribute('points', pts);
-    line.setAttribute('fill','none');
-    line.setAttribute('stroke','#1a3a5c');
-    line.setAttribute('stroke-width','2');
-    line.setAttribute('stroke-linejoin','round');
+    line.setAttribute('fill', 'none');
+    line.setAttribute('stroke', '#1a3a5c');
+    line.setAttribute('stroke-width', '2');
+    line.setAttribute('stroke-linejoin', 'round');
     svg.appendChild(line);
-    const d0 = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    const d0 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     d0.setAttribute('cx', px(0).toFixed(1));
     d0.setAttribute('cy', py(lastClose).toFixed(1));
-    d0.setAttribute('r','4');
-    d0.setAttribute('fill','#9a9790');
-    d0.setAttribute('stroke','white');
-    d0.setAttribute('stroke-width','1.5');
+    d0.setAttribute('r', '4');
+    d0.setAttribute('fill', '#9a9790');
+    d0.setAttribute('stroke', 'white');
+    d0.setAttribute('stroke-width', '1.5');
     svg.appendChild(d0);
-    const dn = document.createElementNS('http://www.w3.org/2000/svg','circle');
-    dn.setAttribute('cx', px(all.length-1).toFixed(1));
-    dn.setAttribute('cy', py(prices[prices.length-1]).toFixed(1));
-    dn.setAttribute('r','5');
-    dn.setAttribute('fill','#1a3a5c');
-    dn.setAttribute('stroke','white');
-    dn.setAttribute('stroke-width','2');
+    const dn = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dn.setAttribute('cx', px(all.length - 1).toFixed(1));
+    dn.setAttribute('cy', py(prices[prices.length - 1]).toFixed(1));
+    dn.setAttribute('r', '5');
+    dn.setAttribute('fill', '#1a3a5c');
+    dn.setAttribute('stroke', 'white');
+    dn.setAttribute('stroke-width', '2');
     svg.appendChild(dn);
   }
 
-  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   async function runForecast() {
     const sym = symbolInput.value.trim();
-    const horizon = parseInt(range.value);
+    const horizon = parseInt(range.value, 10);
     const btn = document.getElementById('runBtn');
     const errEl = document.getElementById('errorMsg');
-
     errEl.style.display = 'none';
-
     if (!sym) {
       errEl.textContent = 'Enter a ticker symbol to continue.';
       errEl.style.display = 'block';
       return;
     }
-
     btn.disabled = true;
     btn.textContent = 'Running…';
     document.getElementById('loadSymbol').textContent = sym;
     showState('loading');
-
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 45000);
     try {
-      const res = await fetch('/api/predict', {
+      const res = await apiFetch('/api/predict', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({symbol: sym, horizon_days: horizon}),
+        body: JSON.stringify({ symbol: sym, horizon_days: horizon }),
         signal: ctrl.signal,
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok || !data) throw new Error(data?.detail || `Server error ${res.status}`);
+      if (!res.ok || !data) throw new Error(formatApiError(data, res.status));
 
       document.getElementById('resTicker').textContent = data.symbol;
-      document.getElementById('resClose').textContent  = `$${data.last_close.toFixed(2)}`;
+      document.getElementById('resClose').textContent = `$${data.last_close.toFixed(2)}`;
       document.getElementById('resSource').textContent = data.data_source;
-
-      const mae = data.model_mae, base = data.baseline_mae;
+      const mae = data.model_mae;
+      const base = data.baseline_mae;
       const imp = (base - mae) / base * 100;
       const maeEl = document.getElementById('resMAE');
       maeEl.textContent = `$${mae.toFixed(2)}`;
@@ -1036,45 +1405,40 @@
       const impEl = document.getElementById('resImprove');
       impEl.textContent = imp >= 0 ? `↓ ${imp.toFixed(1)}%` : `↑ ${Math.abs(imp).toFixed(1)}%`;
       impEl.className = 'stat-value' + (imp >= 0 ? ' positive' : ' negative');
-
       drawChart(data.predicted_prices, data.last_close);
-
-      document.getElementById('tableHeading').textContent =
-        `${horizon}-day price forecast for ${data.symbol}`;
-
+      document.getElementById('tableHeading').textContent = `${horizon}-day price forecast for ${data.symbol}`;
       const tbody = document.getElementById('forecastBody');
       tbody.innerHTML = '';
       const lows = data.predicted_price_low || [];
       const highs = data.predicted_price_high || [];
       data.predicted_dates.forEach((dt, i) => {
         const price = data.predicted_prices[i];
-        const prev  = i === 0 ? data.last_close : data.predicted_prices[i - 1];
-        const chg   = price - prev;
-        const pct   = (chg / prev * 100).toFixed(2);
-        const up    = chg >= 0;
-        const d     = new Date(dt + 'T12:00:00');
-        const label = d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+        const prev = i === 0 ? data.last_close : data.predicted_prices[i - 1];
+        const chg = price - prev;
+        const pct = (chg / prev * 100).toFixed(2);
+        const up = chg >= 0;
+        const d = new Date(`${dt}T12:00:00`);
+        const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         const lo = lows[i] != null ? `$${Number(lows[i]).toFixed(2)}` : '—';
         const hi = highs[i] != null ? `$${Number(highs[i]).toFixed(2)}` : '—';
-
         const tr = document.createElement('tr');
         tr.style.animationDelay = `${Math.min(i * 0.04, 0.28)}s`;
         tr.innerHTML = `
-          <td class="tbl-num">${String(i+1).padStart(2,'0')}</td>
+          <td class="tbl-num">${String(i + 1).padStart(2, '0')}</td>
           <td>${label}</td>
           <td class="tbl-day">${DAYS[d.getDay()]}</td>
-          <td>$${price.toFixed(2)}<span class="delta ${up?'up':'dn'}">${up?'▲':'▼'} ${Math.abs(pct)}%</span></td>
+          <td>$${price.toFixed(2)}<span class="delta ${up ? 'up' : 'dn'}">${up ? '▲' : '▼'} ${Math.abs(pct)}%</span></td>
           <td>${lo}</td>
-          <td>${hi}</td>
-        `;
+          <td>${hi}</td>`;
         tbody.appendChild(tr);
       });
-
       showState('results');
-
-    } catch(err) {
+      if (accessToken) refreshProfile();
+    } catch (err) {
       showState('empty');
-      errEl.textContent = err.name === 'AbortError' ? 'Request timed out after 45s. Try again or shorten the horizon.' : err.message;
+      errEl.textContent = err.name === 'AbortError'
+        ? 'Request timed out after 45s. Try again or shorten the horizon.'
+        : err.message;
       errEl.style.display = 'block';
     } finally {
       clearTimeout(timer);
@@ -1096,22 +1460,218 @@
     out.style.display = 'block';
     out.textContent = 'Thinking…';
     try {
-      const r = await fetch('/api/chat', {
+      const r = await apiFetch('/api/chat', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ messages: [{ role: 'user', content: text }] }),
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        const d = j.detail;
-        const msg = typeof d === 'string' ? d : (d ? JSON.stringify(d) : `HTTP ${r.status}`);
-        throw new Error(msg);
-      }
+      if (!r.ok) throw new Error(formatApiError(j, r.status));
       out.textContent = j.reply || '(empty reply)';
     } catch (e) {
       out.textContent = String(e.message || e);
     }
   });
+
+  async function loadWatchlist() {
+    const gate = document.getElementById('watchlistGate');
+    const tbl = document.getElementById('watchlistTable');
+    const empty = document.getElementById('watchlistEmpty');
+    const body = document.getElementById('watchlistBody');
+    gate.style.display = 'none';
+    tbl.style.display = 'none';
+    empty.style.display = 'none';
+    body.innerHTML = '';
+    if (!accessToken) {
+      gate.style.display = 'block';
+      return;
+    }
+    const r = await apiFetch('/api/watchlist');
+    const j = await r.json().catch(() => null);
+    if (r.status === 503) {
+      gate.textContent = 'Watchlist requires Supabase on the server (URL + service role) and a signed-in user.';
+      gate.style.display = 'block';
+      return;
+    }
+    if (!r.ok) {
+      gate.textContent = formatApiError(j, r.status);
+      gate.style.display = 'block';
+      return;
+    }
+    const items = j.items || [];
+    if (!items.length) {
+      empty.style.display = 'block';
+      return;
+    }
+    tbl.style.display = 'table';
+    items.forEach((row) => {
+      const tr = document.createElement('tr');
+      const added = row.added_at ? new Date(row.added_at).toLocaleString() : '—';
+      tr.innerHTML = `
+        <td class="sym-cell">${row.symbol}</td>
+        <td>${added}</td>
+        <td style="text-align:right">
+          <button type="button" class="ghost-btn wl-run" data-sym="${row.symbol}">Forecast</button>
+          <button type="button" class="ghost-btn danger wl-remove" data-sym="${row.symbol}">Remove</button>
+        </td>`;
+      body.appendChild(tr);
+    });
+    body.querySelectorAll('.wl-run').forEach((b) => {
+      b.addEventListener('click', () => {
+        const sym = b.getAttribute('data-sym');
+        switchTab('forecast');
+        symbolInput.value = sym;
+        normalizeTickerField();
+        runForecast();
+      });
+    });
+    body.querySelectorAll('.wl-remove').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const sym = b.getAttribute('data-sym');
+        await apiFetch(`/api/watchlist?symbol=${encodeURIComponent(sym)}`, { method: 'DELETE' });
+        loadWatchlist();
+      });
+    });
+  }
+
+  async function loadHistory() {
+    const gate = document.getElementById('historyGate');
+    const tbl = document.getElementById('historyTable');
+    const empty = document.getElementById('historyEmpty');
+    const body = document.getElementById('historyBody');
+    gate.style.display = 'none';
+    tbl.style.display = 'none';
+    empty.style.display = 'none';
+    body.innerHTML = '';
+    if (!accessToken) {
+      gate.style.display = 'block';
+      return;
+    }
+    const r = await apiFetch('/api/forecasts/history');
+    const j = await r.json().catch(() => null);
+    if (r.status === 503) {
+      gate.textContent = 'History requires Supabase on the server.';
+      gate.style.display = 'block';
+      return;
+    }
+    if (!r.ok) {
+      gate.textContent = formatApiError(j, r.status);
+      gate.style.display = 'block';
+      return;
+    }
+    const items = j.items || [];
+    if (!items.length) {
+      empty.style.display = 'block';
+      return;
+    }
+    tbl.style.display = 'table';
+    items.forEach((row) => {
+      const tr = document.createElement('tr');
+      const when = row.created_at ? new Date(row.created_at).toLocaleString() : '—';
+      const mae = row.model_mae != null ? Number(row.model_mae).toFixed(3) : '—';
+      const lc = row.last_close != null ? `$${Number(row.last_close).toFixed(2)}` : '—';
+      tr.innerHTML = `<td>${when}</td><td class="sym-cell">${row.symbol}</td><td>${row.horizon}</td><td>${lc}</td><td>${mae}</td>`;
+      body.appendChild(tr);
+    });
+  }
+
+  document.getElementById('histRefreshBtn').addEventListener('click', () => loadHistory());
+
+  const wlInput = document.getElementById('wlAddInput');
+  wlInput.addEventListener('blur', () => { wlInput.value = normalizeTickerInput(wlInput.value); });
+  document.getElementById('wlAddBtn').addEventListener('click', async () => {
+    const err = document.getElementById('wlAddErr');
+    err.style.display = 'none';
+    const sym = normalizeTickerInput(wlInput.value).trim();
+    if (!sym) {
+      err.textContent = 'Enter a symbol.';
+      err.style.display = 'block';
+      return;
+    }
+    if (!accessToken) {
+      err.textContent = 'Sign in on the Account tab first.';
+      err.style.display = 'block';
+      return;
+    }
+    const r = await apiFetch('/api/watchlist', {
+      method: 'POST',
+      body: JSON.stringify({ symbol: sym }),
+    });
+    const j = await r.json().catch(() => null);
+    if (!r.ok) {
+      err.textContent = formatApiError(j, r.status);
+      err.style.display = 'block';
+      return;
+    }
+    wlInput.value = '';
+    loadWatchlist();
+  });
+
+  document.getElementById('accSignIn').addEventListener('click', async () => {
+    const err = document.getElementById('accErr');
+    err.style.display = 'none';
+    const email = document.getElementById('accEmail').value.trim();
+    const password = document.getElementById('accPassword').value;
+    if (!supa) return;
+    const { error } = await supa.auth.signInWithPassword({ email, password });
+    if (error) {
+      err.textContent = error.message;
+      err.style.display = 'block';
+      return;
+    }
+  });
+
+  document.getElementById('accSignUp').addEventListener('click', async () => {
+    const err = document.getElementById('accErr');
+    err.style.display = 'none';
+    const email = document.getElementById('accEmail').value.trim();
+    const password = document.getElementById('accPassword').value;
+    if (!supa) return;
+    const { data, error } = await supa.auth.signUp({ email, password });
+    if (error) {
+      err.textContent = error.message;
+      err.style.display = 'block';
+      return;
+    }
+    if (data.session) err.style.display = 'none';
+    else {
+      err.textContent = 'Check your email to confirm the account, then sign in.';
+      err.style.display = 'block';
+    }
+  });
+
+  document.getElementById('accSignOut').addEventListener('click', async () => {
+    if (supa) await supa.auth.signOut();
+    accessToken = null;
+    profile = null;
+    applyHorizonLimits();
+    renderAccountPanel();
+  });
+
+  async function init() {
+    const br = await fetch('/api/bootstrap');
+    bootstrap = await br.json();
+    if (bootstrap.auth?.enabled) {
+      supa = createClient(bootstrap.auth.supabase_url, bootstrap.auth.supabase_anon_key, {
+        auth: { persistSession: true, autoRefreshToken: true },
+      });
+      supa.auth.onAuthStateChange((_event, session) => {
+        accessToken = session?.access_token ?? null;
+        refreshProfile();
+        if (currentTab === 'watchlist') loadWatchlist();
+        if (currentTab === 'history') loadHistory();
+      });
+      const { data: { session } } = await supa.auth.getSession();
+      accessToken = session?.access_token ?? null;
+    } else {
+      supa = null;
+      accessToken = null;
+    }
+    await refreshProfile();
+    applyHorizonLimits();
+    renderAccountPanel();
+  }
+
+  init();
 </script>
 </body>
 </html>

@@ -1,6 +1,8 @@
-# Stock Predictor
+# MarketPulse
 
 A complete backend + frontend stock prediction app using Python, FastAPI, pandas, and scikit-learn.
+
+Repository: [github.com/haripatel788/MarketPulse](https://github.com/haripatel788/MarketPulse)
 
 ## Features
 

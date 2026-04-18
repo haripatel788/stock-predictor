@@ -39,8 +39,11 @@ from app.auth import get_optional_user
 from app.forecast_tool import register_forecast_runner
 from app.news import fetch_live_headlines
 from app.routes import admin as admin_routes
+from app.routes import bootstrap as bootstrap_routes
 from app.routes import chat as chat_routes
+from app.routes import forecast_history as forecast_history_routes
 from app.routes import users as users_routes
+from app.routes import watchlist as watchlist_routes
 from app.security.audit import AuditEvent, audit_log
 from app.security.headers import SecurityHeadersMiddleware
 from app.security.middleware import AdminPathGuardMiddleware, RequestContextMiddleware
@@ -502,9 +505,12 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
 
+app.include_router(bootstrap_routes.router, prefix="/api")
 app.include_router(chat_routes.router, prefix="/api")
 app.include_router(admin_routes.router, prefix="/api")
 app.include_router(users_routes.router, prefix="/api")
+app.include_router(watchlist_routes.router, prefix="/api")
+app.include_router(forecast_history_routes.router, prefix="/api")
 
 
 @app.get("/")

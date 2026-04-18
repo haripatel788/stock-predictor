@@ -23,6 +23,17 @@ def supabase_enabled() -> bool:
     return get_supabase_client() is not None
 
 
+def get_supabase_required() -> Client:
+    """Service-role client; raises 503 if Supabase env is not configured."""
+    sb = get_supabase_client()
+    if sb is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Account features are not available (server missing Supabase configuration).",
+        )
+    return sb
+
+
 async def get_optional_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
