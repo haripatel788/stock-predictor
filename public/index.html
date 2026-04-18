@@ -1,0 +1,1040 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MarketPulse — ML Stock Forecasting</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --ink:       #0d0d0d;
+      --ink2:      #1c1c1c;
+      --ink3:      #2e2e2e;
+      --rule:      #e2e0d8;
+      --rule2:     #d0cec5;
+      --paper:     #f5f3ee;
+      --paper2:    #ede9e1;
+      --paper3:    #e4e0d6;
+      --accent:    #1a3a5c;
+      --accent2:   #2a5580;
+      --accent-lt: #e8f0f8;
+      --red:       #b5291c;
+      --red-lt:    #fdf0ee;
+      --green:     #1a6b3a;
+      --green-lt:  #edf6f1;
+      --gold:      #a07830;
+      --gold-lt:   #faf3e8;
+      --text:      #1a1917;
+      --text2:     #5a5750;
+      --text3:     #9a9790;
+      --mono:      'DM Mono', monospace;
+      --serif:     'DM Serif Display', serif;
+      --sans:      'DM Sans', sans-serif;
+    }
+
+    html, body {
+      background: var(--paper);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .ticker-bar {
+      background: var(--ink);
+      overflow: hidden;
+      height: 36px;
+      display: flex;
+      align-items: center;
+    }
+    .ticker-label {
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      color: var(--gold);
+      padding: 0 20px;
+      white-space: nowrap;
+      border-right: 1px solid #333;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .ticker-scroll-wrap {
+      flex: 1;
+      overflow: hidden;
+      height: 100%;
+      mask-image: linear-gradient(to right, transparent, black 4%, black 96%, transparent);
+    }
+    .ticker-scroll {
+      display: flex;
+      animation: ticker 50s linear infinite;
+      white-space: nowrap;
+      height: 100%;
+      align-items: center;
+    }
+    .ticker-item {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 0 28px;
+      color: #888;
+      border-right: 1px solid #2a2a2a;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .ticker-item .sym { color: #ddd; font-weight: 500; letter-spacing: 0.04em; }
+    .ticker-item .up  { color: #4caf82; }
+    .ticker-item .dn  { color: #e05a4a; }
+    @keyframes ticker {
+      from { transform: translateX(0); }
+      to   { transform: translateX(-50%); }
+    }
+
+    .masthead {
+      border-bottom: 2px solid var(--ink);
+      background: var(--paper);
+    }
+    .masthead-top {
+      padding: 0 48px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--rule);
+    }
+    .masthead-nav {
+      display: flex;
+      gap: 32px;
+    }
+    .masthead-nav a {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      color: var(--text3);
+      text-decoration: none;
+      text-transform: uppercase;
+      transition: color 0.15s;
+    }
+    .masthead-nav a:hover { color: var(--text); }
+    .masthead-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text3);
+      letter-spacing: 0.08em;
+    }
+    .status-pip {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pip 2.5s ease-in-out infinite;
+    }
+    @keyframes pip {
+      0%,100% { opacity:1; } 50% { opacity:0.2; }
+    }
+    .masthead-main {
+      padding: 28px 48px 24px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+    }
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .brand-kicker {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.22em;
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+    .brand-name {
+      font-family: var(--serif);
+      font-size: 44px;
+      line-height: 1;
+      color: var(--ink);
+      letter-spacing: -0.02em;
+    }
+    .brand-name em {
+      font-style: italic;
+      color: var(--accent);
+    }
+    .masthead-right {
+      text-align: right;
+    }
+    .masthead-date {
+      font-family: var(--serif);
+      font-size: 14px;
+      font-style: italic;
+      color: var(--text3);
+    }
+    .masthead-edition {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      color: var(--text3);
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    .body-wrap {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      min-height: calc(100vh - 36px - 107px);
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--rule2);
+      padding: 36px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 36px;
+      background: var(--paper);
+    }
+
+    .sidebar-section {}
+    .sidebar-heading {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.2em;
+      color: var(--text3);
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .form-field { display: flex; flex-direction: column; gap: 6px; }
+    .form-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      color: var(--text2);
+      text-transform: uppercase;
+    }
+    .form-input {
+      background: white;
+      border: 1px solid var(--rule2);
+      border-radius: 2px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 20px;
+      font-weight: 500;
+      padding: 12px 14px;
+      width: 100%;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .form-input::placeholder {
+      color: var(--text3);
+      font-size: 14px;
+      letter-spacing: 0.04em;
+      font-weight: 300;
+    }
+    .form-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-lt);
+    }
+
+    .horizon-section {}
+    .horizon-big {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .horizon-n {
+      font-family: var(--serif);
+      font-size: 56px;
+      line-height: 1;
+      color: var(--accent);
+    }
+    .horizon-unit {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text3);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .range-input {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 3px;
+      background: var(--rule2);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+    .range-input::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px; height: 18px;
+      background: var(--accent);
+      border-radius: 50%;
+      cursor: pointer;
+      border: 3px solid white;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+      transition: transform 0.15s;
+    }
+    .range-input::-webkit-slider-thumb:hover { transform: scale(1.15); }
+    .range-ticks {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+      font-family: var(--mono);
+      font-size: 9px;
+      color: var(--text3);
+    }
+
+    .run-btn {
+      width: 100%;
+      background: var(--ink);
+      color: white;
+      border: none;
+      border-radius: 2px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      padding: 16px;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .run-btn:hover { background: var(--ink3); }
+    .run-btn:active { transform: scale(0.99); }
+    .run-btn:disabled {
+      background: var(--rule2);
+      color: var(--text3);
+      cursor: not-allowed;
+    }
+
+    .error-msg {
+      margin-top: 10px;
+      background: var(--red-lt);
+      border-left: 3px solid var(--red);
+      padding: 10px 14px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--red);
+      display: none;
+      line-height: 1.6;
+    }
+
+    .model-rows { display: flex; flex-direction: column; gap: 0; }
+    .model-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--rule);
+    }
+    .model-row:last-child { border-bottom: none; }
+    .model-key {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text3);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .model-val {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text2);
+    }
+    .model-val.highlight { color: var(--accent); font-weight: 500; }
+
+    .main-content {
+      display: flex;
+      flex-direction: column;
+      background: var(--paper);
+    }
+
+    .state-empty {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 80px 60px;
+      text-align: center;
+      gap: 16px;
+    }
+    .empty-rule {
+      width: 60px;
+      height: 2px;
+      background: var(--rule2);
+      margin-bottom: 8px;
+    }
+    .empty-headline {
+      font-family: var(--serif);
+      font-size: 28px;
+      color: var(--text3);
+      font-style: italic;
+      line-height: 1.3;
+    }
+    .empty-deck {
+      font-family: var(--sans);
+      font-size: 13px;
+      color: var(--text3);
+      max-width: 320px;
+      line-height: 1.7;
+      font-weight: 300;
+    }
+
+    .state-loading {
+      flex: 1;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 80px;
+    }
+    .loading-symbol {
+      font-family: var(--serif);
+      font-size: 36px;
+      color: var(--accent);
+      letter-spacing: 0.02em;
+    }
+    .loading-progress {
+      width: 200px;
+      height: 2px;
+      background: var(--rule2);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .loading-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      animation: loadprogress 2s ease-in-out infinite;
+    }
+    @keyframes loadprogress {
+      0%   { width: 0%; margin-left: 0; }
+      50%  { width: 60%; margin-left: 20%; }
+      100% { width: 0%; margin-left: 100%; }
+    }
+    .loading-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      color: var(--text3);
+      text-transform: uppercase;
+    }
+
+    /* Results */
+    .state-results {
+      flex: 1;
+      display: none;
+      flex-direction: column;
+    }
+
+    .results-masthead {
+      border-bottom: 1px solid var(--rule2);
+      padding: 28px 40px 24px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+    }
+    .results-ticker {
+      font-family: var(--serif);
+      font-size: 52px;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+    .results-subline {
+      font-family: var(--sans);
+      font-size: 13px;
+      color: var(--text2);
+      margin-top: 6px;
+      font-weight: 300;
+    }
+    .results-subline strong {
+      font-size: 20px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .results-source {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      color: var(--text3);
+      text-transform: uppercase;
+      border: 1px solid var(--rule2);
+      padding: 5px 12px;
+      border-radius: 2px;
+    }
+
+    .stat-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-bottom: 1px solid var(--rule2);
+    }
+    .stat-cell {
+      padding: 20px 40px;
+      border-right: 1px solid var(--rule2);
+    }
+    .stat-cell:last-child { border-right: none; }
+    .stat-label {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.16em;
+      color: var(--text3);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .stat-value {
+      font-family: var(--mono);
+      font-size: 24px;
+      font-weight: 400;
+      color: var(--text);
+    }
+    .stat-value.positive { color: var(--green); }
+    .stat-value.negative { color: var(--red); }
+    .stat-sub {
+      font-family: var(--sans);
+      font-size: 11px;
+      color: var(--text3);
+      margin-top: 3px;
+      font-weight: 300;
+    }
+
+    .chart-section {
+      padding: 28px 40px 20px;
+      border-bottom: 1px solid var(--rule2);
+    }
+    .chart-label {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.16em;
+      color: var(--text3);
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    .chart-svg {
+      width: 100%;
+      height: 88px;
+      display: block;
+    }
+
+    .table-section {
+      flex: 1;
+      padding: 28px 40px 40px;
+      overflow-y: auto;
+    }
+    .table-heading {
+      font-family: var(--serif);
+      font-size: 18px;
+      color: var(--ink);
+      font-style: italic;
+      margin-bottom: 20px;
+    }
+    .forecast-tbl {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .forecast-tbl thead tr {
+      border-bottom: 2px solid var(--ink);
+    }
+    .forecast-tbl th {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.16em;
+      color: var(--text3);
+      text-transform: uppercase;
+      padding: 0 0 10px;
+      text-align: left;
+      font-weight: 400;
+    }
+    .forecast-tbl th:last-child { text-align: right; }
+    .forecast-tbl tbody tr {
+      border-bottom: 1px solid var(--rule);
+      transition: background 0.12s;
+      animation: fadeRow 0.35s ease both;
+    }
+    .forecast-tbl tbody tr:hover { background: var(--paper2); }
+    @keyframes fadeRow {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .forecast-tbl td {
+      padding: 14px 0;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text2);
+    }
+    .forecast-tbl td:last-child {
+      text-align: right;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .tbl-num { color: var(--text3); font-size: 10px; }
+    .tbl-day { color: var(--text3); }
+    .delta {
+      display: inline-block;
+      margin-left: 10px;
+      font-size: 10px;
+      font-weight: 400;
+    }
+    .delta.up { color: var(--green); }
+    .delta.dn { color: var(--red); }
+
+    .disclaimer {
+      padding: 12px 40px;
+      border-top: 1px solid var(--rule);
+      font-family: var(--mono);
+      font-size: 9px;
+      color: var(--text3);
+      line-height: 1.7;
+      letter-spacing: 0.04em;
+    }
+    footer {
+      border-top: 2px solid var(--ink);
+      background: var(--paper);
+      padding: 18px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .footer-col {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .footer-line {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text3);
+      letter-spacing: 0.06em;
+    }
+    .footer-line a {
+      color: var(--accent);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    .footer-line a:hover { color: var(--accent2); text-decoration: underline; }
+    .footer-right {
+      text-align: right;
+    }
+    .footer-right .footer-line {
+      text-align: right;
+    }
+
+    @media (max-width: 860px) {
+      .body-wrap { grid-template-columns: 1fr; }
+      .sidebar { border-right: none; border-bottom: 1px solid var(--rule2); }
+      .masthead-top, .masthead-main { padding-left: 24px; padding-right: 24px; }
+      .brand-name { font-size: 36px; }
+      .results-masthead, .stat-strip .stat-cell,
+      .chart-section, .table-section { padding-left: 24px; padding-right: 24px; }
+      footer { padding: 16px 24px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="ticker-bar">
+  <div class="ticker-label">INDICES</div>
+  <div class="ticker-scroll-wrap">
+    <div class="ticker-scroll" id="tickerScroll"></div>
+  </div>
+</div>
+
+<div class="masthead">
+  <div class="masthead-top">
+    <nav class="masthead-nav">
+      <a href="#">Equities</a>
+      <a href="#">Fixed Income</a>
+      <a href="#">Commodities</a>
+      <a href="#">ML Models</a>
+    </nav>
+    <div class="masthead-status">
+      <div class="status-pip"></div>
+      <span>Markets open</span>
+    </div>
+  </div>
+  <div class="masthead-main">
+    <div class="brand">
+      <div class="brand-kicker">Machine Learning Forecasting Engine</div>
+      <div class="brand-name">Market<em>Pulse</em></div>
+    </div>
+    <div class="masthead-right">
+      <div class="masthead-date" id="mastheadDate"></div>
+      <div class="masthead-edition">Random Forest · FinBERT · Gemini</div>
+    </div>
+  </div>
+</div>
+
+<div class="body-wrap">
+
+  <aside class="sidebar">
+
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Instrument</div>
+      <div class="form-field">
+        <label class="form-label" for="symbolInput">Ticker Symbol</label>
+        <input
+          id="symbolInput"
+          class="form-input"
+          type="text"
+          placeholder="AAPL, MSFT..."
+          maxlength="10"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Forecast Horizon</div>
+      <div class="horizon-big">
+        <div class="horizon-n" id="horizonNum">7</div>
+        <div class="horizon-unit">days</div>
+      </div>
+      <input id="horizonRange" class="range-input" type="range" min="1" max="30" value="7" />
+      <div class="range-ticks">
+        <span>1</span><span>7</span><span>14</span><span>21</span><span>30</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <button class="run-btn" id="runBtn">Run Forecast</button>
+      <div class="error-msg" id="errorMsg"></div>
+    </div>
+
+    <div class="sidebar-section" style="margin-top:auto;">
+      <div class="sidebar-heading">Model Details</div>
+      <div class="model-rows">
+        <div class="model-row">
+          <span class="model-key">Algorithm</span>
+          <span class="model-val">Random Forest</span>
+        </div>
+        <div class="model-row">
+          <span class="model-key">Trees</span>
+          <span class="model-val">300 estimators</span>
+        </div>
+        <div class="model-row">
+          <span class="model-key">Features</span>
+          <span class="model-val">32 total</span>
+        </div>
+        <div class="model-row">
+          <span class="model-key">Price data</span>
+          <span class="model-val">Stooq / Yahoo</span>
+        </div>
+        <div class="model-row">
+          <span class="model-key">Sentiment</span>
+          <span class="model-val highlight">FinBERT + Gemini</span>
+        </div>
+        <div class="model-row">
+          <span class="model-key">Max horizon</span>
+          <span class="model-val">30 days</span>
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+  <main class="main-content">
+
+    <div class="state-empty" id="stateEmpty">
+      <div class="empty-rule"></div>
+      <div class="empty-headline">No forecast on record.</div>
+      <div class="empty-deck">
+        Enter a ticker symbol on the left and choose a forecast horizon to generate a machine-learning price projection.
+      </div>
+    </div>
+
+    <div class="state-loading" id="stateLoading">
+      <div class="loading-symbol" id="loadSymbol">—</div>
+      <div class="loading-progress"><div class="loading-fill"></div></div>
+      <div class="loading-label">Fetching data · Training model · Scoring sentiment</div>
+    </div>
+
+    <div class="state-results" id="stateResults">
+
+      <div class="results-masthead">
+        <div>
+          <div class="results-ticker" id="resTicker">—</div>
+          <div class="results-subline">
+            Last close &nbsp;<strong id="resClose">—</strong>
+          </div>
+        </div>
+        <div class="results-source" id="resSource">—</div>
+      </div>
+
+      <div class="stat-strip">
+        <div class="stat-cell">
+          <div class="stat-label">Model MAE</div>
+          <div class="stat-value" id="resMAE">—</div>
+          <div class="stat-sub" id="resMAEpct">—</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-label">Baseline MAE</div>
+          <div class="stat-value" id="resBaseline">—</div>
+          <div class="stat-sub">Naïve (today = tomorrow)</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-label">vs. Baseline</div>
+          <div class="stat-value" id="resImprove">—</div>
+          <div class="stat-sub">Error improvement</div>
+        </div>
+      </div>
+
+      <div class="chart-section">
+        <div class="chart-label">Forecast trajectory</div>
+        <svg class="chart-svg" id="chartSVG" viewBox="0 0 800 88" preserveAspectRatio="none"></svg>
+      </div>
+
+      <div class="table-section">
+        <div class="table-heading" id="tableHeading">—</div>
+        <table class="forecast-tbl">
+          <thead>
+            <tr>
+              <th style="width:40px">#</th>
+              <th>Date</th>
+              <th>Day</th>
+              <th>Forecast Price</th>
+            </tr>
+          </thead>
+          <tbody id="forecastBody"></tbody>
+        </table>
+      </div>
+
+      <div class="disclaimer">
+        For informational purposes only. Not financial advice. Past model performance does not guarantee future accuracy. All forecasts are probabilistic estimates generated by a machine learning model trained on historical price and sentiment data.
+      </div>
+
+    </div>
+
+  </main>
+</div>
+
+<footer>
+  <div class="footer-col">
+    <div class="footer-line">
+      &copy; 2026 MarketPulse &nbsp;&middot;&nbsp;
+      Built by <a href="https://haripatel788.github.io/" target="_blank" rel="noopener">Hari Patel</a>
+    </div>
+    <div class="footer-line">
+      UI built by <a href="https://claude.ai" target="_blank" rel="noopener">Claude</a>
+      &nbsp;&middot;&nbsp;
+      Styled with <a href="https://tailwindcss.com/docs" target="_blank" rel="noopener">TailwindCSS</a>
+    </div>
+  </div>
+  <div class="footer-col footer-right">
+    <div class="footer-line">FastAPI &nbsp;&middot;&nbsp; scikit-learn &nbsp;&middot;&nbsp; FinBERT &nbsp;&middot;&nbsp; Gemini API</div>
+    <div class="footer-line">Data: Stooq &nbsp;&middot;&nbsp; Yahoo Finance &nbsp;&middot;&nbsp; NewsAPI</div>
+  </div>
+</footer>
+
+<script>
+  document.getElementById('mastheadDate').textContent = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+  });
+
+  const TAPE = [
+    {sym:'SPY',  p:'542.18', c:'+3.21', pct:'+0.60%', up:true},
+    {sym:'QQQ',  p:'461.74', c:'-1.08', pct:'-0.23%', up:false},
+    {sym:'AAPL', p:'252.96', c:'+1.23', pct:'+0.49%', up:true},
+    {sym:'MSFT', p:'415.32', c:'-2.18', pct:'-0.52%', up:false},
+    {sym:'NVDA', p:'876.54', c:'+12.4', pct:'+1.43%', up:true},
+    {sym:'TSLA', p:'173.40', c:'-4.52', pct:'-2.54%', up:false},
+    {sym:'AMZN', p:'196.18', c:'+0.87', pct:'+0.44%', up:true},
+    {sym:'GOOGL', p:'171.90', c:'-1.10', pct:'-0.64%', up:false},
+    {sym:'META',  p:'586.22', c:'+7.34', pct:'+1.27%', up:true},
+    {sym:'JPM',   p:'248.75', c:'+1.56', pct:'+0.63%', up:true},
+    {sym:'AMD',   p:'108.32', c:'-3.20', pct:'-2.87%', up:false},
+    {sym:'NFLX',  p:'998.44', c:'+14.2', pct:'+1.44%', up:true},
+    {sym:'DIA',   p:'418.36', c:'+0.92', pct:'+0.22%', up:true},
+    {sym:'IWM',   p:'197.84', c:'-0.66', pct:'-0.33%', up:false},
+  ];
+  (function buildTape() {
+    const wrap = document.getElementById('tickerScroll');
+    [...TAPE, ...TAPE].forEach(t => {
+      const el = document.createElement('div');
+      el.className = 'ticker-item';
+      el.innerHTML = `<span class="sym">${t.sym}</span><span>${t.p}</span><span class="${t.up?'up':'dn'}">${t.c} (${t.pct})</span>`;
+      wrap.appendChild(el);
+    });
+  })();
+
+  const range = document.getElementById('horizonRange');
+  const horizonNum = document.getElementById('horizonNum');
+  range.addEventListener('input', () => { horizonNum.textContent = range.value; });
+
+  const symbolInput = document.getElementById('symbolInput');
+  symbolInput.addEventListener('input', () => {
+    const pos = symbolInput.selectionStart;
+    symbolInput.value = symbolInput.value.toUpperCase().replace(/[^A-Z0-9.\-^=]/g, '');
+    symbolInput.setSelectionRange(pos, pos);
+  });
+  symbolInput.addEventListener('keydown', e => { if (e.key === 'Enter') runForecast(); });
+  function showState(s) {
+    document.getElementById('stateEmpty').style.display   = s === 'empty'   ? 'flex'   : 'none';
+    document.getElementById('stateLoading').style.display = s === 'loading' ? 'flex'   : 'none';
+    document.getElementById('stateResults').style.display = s === 'results' ? 'flex'   : 'none';
+  }
+
+  function drawChart(prices, lastClose) {
+    const svg = document.getElementById('chartSVG');
+    svg.innerHTML = '';
+    const all = [lastClose, ...prices];
+    const mn = Math.min(...all), mx = Math.max(...all);
+    const pad = (mx - mn) * 0.12 || 2;
+    const lo = mn - pad, hi = mx + pad;
+    const W = 800, H = 88;
+    const px = i => (i / (all.length - 1)) * W;
+    const py = v => H - ((v - lo) / (hi - lo)) * (H - 8) - 4;
+
+    const pts = all.map((v,i) => `${px(i).toFixed(1)},${py(v).toFixed(1)}`).join(' ');
+    for (let i = 1; i < 4; i++) {
+      const yg = (H / 4) * i;
+      const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+      line.setAttribute('x1','0'); line.setAttribute('x2', W);
+      line.setAttribute('y1', yg); line.setAttribute('y2', yg);
+      line.setAttribute('stroke','#d8d5ce'); line.setAttribute('stroke-width','0.5');
+      svg.appendChild(line);
+    }
+    const sepX = px(0).toFixed(1);
+    const sep = document.createElementNS('http://www.w3.org/2000/svg','line');
+    sep.setAttribute('x1', sepX); sep.setAttribute('x2', sepX);
+    sep.setAttribute('y1','0'); sep.setAttribute('y2', H);
+    sep.setAttribute('stroke','#aaa'); sep.setAttribute('stroke-width','1');
+    sep.setAttribute('stroke-dasharray','4,3');
+    svg.appendChild(sep);
+    const area = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    area.setAttribute('points', `0,${H} ${pts} ${W},${H}`);
+    area.setAttribute('fill', 'rgba(26,58,92,0.07)');
+    svg.appendChild(area);
+    const line = document.createElementNS('http://www.w3.org/2000/svg','polyline');
+    line.setAttribute('points', pts);
+    line.setAttribute('fill','none');
+    line.setAttribute('stroke','#1a3a5c');
+    line.setAttribute('stroke-width','2');
+    line.setAttribute('stroke-linejoin','round');
+    svg.appendChild(line);
+    const d0 = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    d0.setAttribute('cx', px(0).toFixed(1));
+    d0.setAttribute('cy', py(lastClose).toFixed(1));
+    d0.setAttribute('r','4');
+    d0.setAttribute('fill','#9a9790');
+    d0.setAttribute('stroke','white');
+    d0.setAttribute('stroke-width','1.5');
+    svg.appendChild(d0);
+    const dn = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    dn.setAttribute('cx', px(all.length-1).toFixed(1));
+    dn.setAttribute('cy', py(prices[prices.length-1]).toFixed(1));
+    dn.setAttribute('r','5');
+    dn.setAttribute('fill','#1a3a5c');
+    dn.setAttribute('stroke','white');
+    dn.setAttribute('stroke-width','2');
+    svg.appendChild(dn);
+  }
+
+  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  async function runForecast() {
+    const sym = symbolInput.value.trim();
+    const horizon = parseInt(range.value);
+    const btn = document.getElementById('runBtn');
+    const errEl = document.getElementById('errorMsg');
+
+    errEl.style.display = 'none';
+
+    if (!sym) {
+      errEl.textContent = 'Enter a ticker symbol to continue.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Running…';
+    document.getElementById('loadSymbol').textContent = sym;
+    showState('loading');
+
+    try {
+      const res = await fetch('/api/predict', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({symbol: sym, horizon_days: horizon}),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data) throw new Error(data?.detail || `Server error ${res.status}`);
+
+      document.getElementById('resTicker').textContent = data.symbol;
+      document.getElementById('resClose').textContent  = `$${data.last_close.toFixed(2)}`;
+      document.getElementById('resSource').textContent = data.data_source;
+
+      const mae = data.model_mae, base = data.baseline_mae;
+      const imp = (base - mae) / base * 100;
+      const maeEl = document.getElementById('resMAE');
+      maeEl.textContent = `$${mae.toFixed(2)}`;
+      maeEl.className = 'stat-value' + (mae < base ? ' positive' : ' negative');
+      document.getElementById('resMAEpct').textContent = `${data.model_mae_pct.toFixed(2)}% of price`;
+      document.getElementById('resBaseline').textContent = `$${base.toFixed(2)}`;
+      const impEl = document.getElementById('resImprove');
+      impEl.textContent = imp >= 0 ? `↓ ${imp.toFixed(1)}%` : `↑ ${Math.abs(imp).toFixed(1)}%`;
+      impEl.className = 'stat-value' + (imp >= 0 ? ' positive' : ' negative');
+
+      drawChart(data.predicted_prices, data.last_close);
+
+      document.getElementById('tableHeading').textContent =
+        `${horizon}-day price forecast for ${data.symbol}`;
+
+      const tbody = document.getElementById('forecastBody');
+      tbody.innerHTML = '';
+      data.predicted_dates.forEach((dt, i) => {
+        const price = data.predicted_prices[i];
+        const prev  = i === 0 ? data.last_close : data.predicted_prices[i - 1];
+        const chg   = price - prev;
+        const pct   = (chg / prev * 100).toFixed(2);
+        const up    = chg >= 0;
+        const d     = new Date(dt + 'T12:00:00');
+        const label = d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+
+        const tr = document.createElement('tr');
+        tr.style.animationDelay = `${i * 0.04}s`;
+        tr.innerHTML = `
+          <td class="tbl-num">${String(i+1).padStart(2,'0')}</td>
+          <td>${label}</td>
+          <td class="tbl-day">${DAYS[d.getDay()]}</td>
+          <td>$${price.toFixed(2)}<span class="delta ${up?'up':'dn'}">${up?'▲':'▼'} ${Math.abs(pct)}%</span></td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      showState('results');
+
+    } catch(err) {
+      showState('empty');
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Run Forecast';
+    }
+  }
+
+  document.getElementById('runBtn').addEventListener('click', runForecast);
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+fastapi==0.115.8
+uvicorn==0.34.0
+pandas==2.2.3
+numpy==2.2.2
+scikit-learn==1.6.1
+requests==2.32.3
+httpx==0.28.1
+python-dotenv==1.2.2
+google-genai==1.68.0
+newsapi-python==0.2.7
