@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from app.main import FEATURE_COLS, forecast_next_days
+from app.main import FEATURE_COLS, build_feature_frame, forecast_next_days
 
 
 class ReturnFromCloseModel:
@@ -32,8 +32,7 @@ def make_history(end_date: str, periods: int = 80) -> pd.DataFrame:
 
 def test_forecast_uses_most_recent_day_features():
     history = make_history("2025-02-14")
-    # Pass ticker="" so no sentiment cache lookup is attempted
-    prices, dates = forecast_next_days(history, ReturnFromCloseModel(), FEATURE_COLS, 1, ticker="")
+    prices, dates = forecast_next_days(history, ReturnFromCloseModel(), FEATURE_COLS, 1)
 
     last_close = history["close"].iloc[-1]
     assert prices[0] == round(last_close * (1.0 + (last_close / 10000.0)), 2)
@@ -42,7 +41,23 @@ def test_forecast_uses_most_recent_day_features():
 
 def test_forecast_skips_nyse_holidays():
     history = make_history("2025-12-24")
-    prices, dates = forecast_next_days(history, ConstantModel(), FEATURE_COLS, 1, ticker="")
+    prices, dates = forecast_next_days(history, ConstantModel(), FEATURE_COLS, 1)
 
     assert prices[0] == round(history["close"].iloc[-1], 2)
     assert dates[0] == "2025-12-26"
+
+
+def test_forecast_iterates_multi_day_constant():
+    history = make_history("2025-12-24")
+    prices, dates = forecast_next_days(history, ConstantModel(), FEATURE_COLS, 2)
+    last = round(history["close"].iloc[-1], 2)
+    assert prices == [last, last]
+    assert dates[0] == "2025-12-26"
+    assert dates[1] == "2025-12-29"
+
+
+def test_feature_frame_has_expected_columns():
+    history = make_history("2025-02-14", periods=100)
+    frame = build_feature_frame(history).dropna(subset=FEATURE_COLS)
+    assert len(frame) > 0
+    assert set(FEATURE_COLS).issubset(frame.columns)

@@ -1,10 +1,16 @@
-import re
+import logging
 import os
+import re
+import threading
+import time
+from collections import OrderedDict
 from datetime import datetime, timezone
+
 import numpy as np
 import pandas as pd
 import requests
-from fastapi import FastAPI, HTTPException
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pandas.tseries.holiday import (
@@ -23,30 +29,20 @@ from pydantic import BaseModel, Field
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import train_test_split
-from dotenv import load_dotenv
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 load_dotenv()
 
-from app.sentiment import load_sentiment_cache, score_headlines_gemini, compute_weighted_sentiment
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
+
 from app.news import fetch_live_headlines
+from app.sentiment import compute_weighted_sentiment, score_headlines_groq
 
+logger = logging.getLogger(__name__)
 
-class PredictionRequest(BaseModel):
-    symbol: str = Field(min_length=1, max_length=24)
-    horizon_days: int = Field(default=7, ge=1, le=30)
-
-
-class PredictionResponse(BaseModel):
-    symbol: str
-    data_source: str
-    last_close: float
-    predicted_prices: list[float]
-    predicted_dates: list[str]
-    model_mae: float
-    model_mae_pct: float
-    baseline_mae: float
-
-
+# Price-only features (27). Sentiment is applied after each 1-day return (no train/serve skew).
 FEATURE_COLS = [
     "close",
     "volume",
@@ -75,12 +71,43 @@ FEATURE_COLS = [
     "intraday_range",
     "high_close_ratio",
     "low_close_ratio",
-    "daily_sentiment",
-    "sentiment_3d_avg",
-    "sentiment_momentum",
-    "weighted_sentiment",
-    "sentiment_volume",
 ]
+
+MODEL_CACHE_TTL_SEC = int(os.getenv("MODEL_CACHE_TTL_SEC", "3600"))
+MODEL_CACHE_MAX_KEYS = int(os.getenv("MODEL_CACHE_MAX_KEYS", "24"))
+SENTIMENT_RETURN_COEF = float(os.getenv("SENTIMENT_RETURN_COEF", "0.004"))
+
+# In-memory model cache: symbol -> (trained_at_epoch, model, mae, mae_pct, baseline_mae, feature_cols)
+_model_cache: OrderedDict[str, tuple[float, RandomForestRegressor, float, float, float, list[str]]] = (
+    OrderedDict()
+)
+_model_cache_lock = threading.Lock()
+_symbol_train_locks: dict[str, threading.Lock] = {}
+
+
+def _symbol_lock(symbol: str) -> threading.Lock:
+    with _model_cache_lock:
+        if symbol not in _symbol_train_locks:
+            _symbol_train_locks[symbol] = threading.Lock()
+        return _symbol_train_locks[symbol]
+
+
+class PredictionRequest(BaseModel):
+    symbol: str = Field(min_length=1, max_length=10)
+    horizon_days: int = Field(default=7, ge=1, le=30)
+
+
+class PredictionResponse(BaseModel):
+    symbol: str
+    data_source: str
+    last_close: float
+    predicted_prices: list[float]
+    predicted_dates: list[str]
+    predicted_price_low: list[float]
+    predicted_price_high: list[float]
+    model_mae: float
+    model_mae_pct: float
+    baseline_mae: float
 
 
 class NyseHolidayCalendar(AbstractHolidayCalendar):
@@ -105,8 +132,12 @@ def normalize_symbol(raw_symbol: str) -> str:
     clean = raw_symbol.strip().upper()
     if not clean:
         raise ValueError("Ticker symbol is required")
-    if not re.fullmatch(r"[A-Z0-9.\-^=]{1,24}", clean):
-        raise ValueError("Ticker contains unsupported characters")
+    if clean.startswith("^"):
+        if not re.fullmatch(r"\^[A-Z][A-Z0-9.\-]{0,14}", clean):
+            raise ValueError("Invalid index symbol format")
+        return clean
+    if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", clean):
+        raise ValueError("Use 1–10 characters: start with A–Z, then letters, digits, dot, or hyphen")
     return clean
 
 
@@ -198,11 +229,7 @@ def fetch_history(symbol: str, rows: int = 1200) -> tuple[pd.DataFrame, str]:
     raise ValueError("Unable to load data for this ticker right now.")
 
 
-def build_feature_frame(df: pd.DataFrame, ticker: str = "") -> pd.DataFrame:
-    """
-    Build all 32 features. ticker is passed explicitly to avoid the unreliable
-    pandas attribute pattern (_ticker on a DataFrame does not survive .copy()).
-    """
+def build_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
     work = df.copy()
     work["return_1d"] = work["close"].pct_change()
     work["return_3d"] = work["close"].pct_change(3)
@@ -229,50 +256,20 @@ def build_feature_frame(df: pd.DataFrame, ticker: str = "") -> pd.DataFrame:
     work["intraday_range"] = (work["high"] - work["low"]) / work["close"]
     work["high_close_ratio"] = work["high"] / work["close"] - 1.0
     work["low_close_ratio"] = work["low"] / work["close"] - 1.0
-    work["daily_sentiment"] = 0.0
-    work["sentiment_3d_avg"] = 0.0
-    work["sentiment_momentum"] = 0.0
-    work["weighted_sentiment"] = 0.0
-    work["sentiment_volume"] = 0.0
-
-    if ticker:
-        try:
-            cache = load_sentiment_cache()
-            if not cache.empty and "date" in work.columns:
-                work["_date_key"] = pd.to_datetime(work["date"]).dt.date
-                ticker_cache = cache[cache["stock"] == ticker][
-                    ["date", "daily_sentiment", "sentiment_3d_avg", "sentiment_momentum"]
-                ].rename(columns={"date": "_date_key"})
-
-                if not ticker_cache.empty:
-                    merged = work.merge(ticker_cache, on="_date_key", how="left", suffixes=("", "_new"))
-                    for col in ["daily_sentiment", "sentiment_3d_avg", "sentiment_momentum"]:
-                        new_col = f"{col}_new"
-                        if new_col in merged.columns:
-                            merged[col] = merged[new_col].fillna(0.0)
-                            merged = merged.drop(columns=[new_col])
-                    work = merged
-
-                work = work.drop(columns=["_date_key"], errors="ignore")
-        except Exception:
-            pass 
-
     return work
 
 
-def build_training_features(df: pd.DataFrame, horizon_days: int, ticker: str = "") -> tuple[pd.DataFrame, list[str]]:
-    work = build_feature_frame(df, ticker=ticker)
-    target_cols: list[str] = []
-    for step in range(1, horizon_days + 1):
-        col = f"target_return_{step}"
-        work[col] = work["close"].shift(-step) / work["close"] - 1.0
-        target_cols.append(col)
+def build_training_features(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """One-day forward return only; iterated rollout happens in forecast_next_days."""
+    work = build_feature_frame(df)
+    target_cols = ["target_return_1"]
+    work["target_return_1"] = work["close"].shift(-1) / work["close"] - 1.0
     required_cols = FEATURE_COLS + target_cols
     return work.dropna(subset=required_cols).reset_index(drop=True), target_cols
 
 
-def latest_feature_vector(history: pd.DataFrame, ticker: str = "") -> pd.Series:
-    features = build_feature_frame(history, ticker=ticker).dropna(subset=FEATURE_COLS)
+def latest_feature_vector(history: pd.DataFrame) -> pd.Series:
+    features = build_feature_frame(history).dropna(subset=FEATURE_COLS)
     if features.empty:
         raise ValueError("Insufficient data to build forecasting features")
     return features.iloc[-1][FEATURE_COLS].copy()
@@ -283,11 +280,12 @@ def train_model(
 ) -> tuple[RandomForestRegressor, float, float, float, list[str]]:
     x = feature_df[FEATURE_COLS]
     y = feature_df[target_cols]
+    # Last 20% is a single temporal holdout (shuffle=False): no future rows in train.
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, shuffle=False)
     params = {
         "n_estimators": 300,
         "random_state": 42,
-        "min_samples_leaf": 3,
+        "min_samples_leaf": 12,
         "max_depth": 14,
         "max_features": "sqrt",
         "n_jobs": -1,
@@ -309,7 +307,27 @@ def train_model(
     mae_pct = float(np.mean(np.abs((actual_next_close - model_next_close) / safe_actual)) * 100.0)
     final_model = RandomForestRegressor(**params)
     final_model.fit(x, y)
+    importances = np.asarray(final_model.feature_importances_, dtype=float)
+    top_idx = np.argsort(importances)[::-1][:10]
+    top_pairs = [f"{FEATURE_COLS[i]}={importances[i]:.4f}" for i in top_idx]
+    logger.info("Top mean feature importances: %s", ", ".join(top_pairs))
     return final_model, mae, mae_pct, baseline_mae, FEATURE_COLS
+
+
+def _append_synthetic_trading_day(history: pd.DataFrame, next_close: float, next_date: pd.Timestamp) -> pd.DataFrame:
+    h = history.copy()
+    last_close = float(h["close"].iloc[-1])
+    o = last_close
+    c = float(next_close)
+    hi = max(o, c) * 1.002
+    lo = min(o, c) * 0.998
+    vol = float(h["volume"].tail(20).mean())
+    if not np.isfinite(vol) or vol <= 0:
+        vol = float(h["volume"].iloc[-1])
+    new_row = pd.DataFrame(
+        [{"date": next_date, "open": o, "high": hi, "low": lo, "close": c, "volume": vol}]
+    )
+    return pd.concat([h, new_row], ignore_index=True)
 
 
 def forecast_next_days(
@@ -317,39 +335,77 @@ def forecast_next_days(
     model: RandomForestRegressor,
     feature_cols: list[str],
     horizon_days: int,
-    ticker: str = "",
     weighted_sentiment: float = 0.0,
-    sentiment_volume: float = 0.0,
+    volume_ratio: float = 1.0,
 ) -> tuple[list[float], list[str]]:
+    """
+    Recursive one-day-ahead forecast: each step updates history with the predicted close,
+    then rebuilds features from the extended series.
+    """
     history = history_df.copy()
     prices: list[float] = []
     dates: list[str] = []
-    current_date = history["date"].iloc[-1]
+    current_date = pd.Timestamp(history["date"].iloc[-1])
+    vr = float(np.clip(volume_ratio, 0.25, 3.0))
+    sent_adj = SENTIMENT_RETURN_COEF * float(np.clip(weighted_sentiment, -1.0, 1.0)) * vr
 
-    latest = latest_feature_vector(history, ticker=ticker)
+    for _ in range(horizon_days):
+        latest = latest_feature_vector(history)
+        raw = np.asarray(model.predict(latest[feature_cols].to_frame().T), dtype=float)
+        r_raw = float(raw.reshape(-1)[0])
+        r_raw = float(np.clip(r_raw, -0.30, 0.30))
+        r = float(np.clip(r_raw + sent_adj, -0.30, 0.30))
 
-    latest["weighted_sentiment"] = weighted_sentiment
-    latest["sentiment_volume"] = sentiment_volume
-
-    predicted_returns = np.asarray(model.predict(latest[feature_cols].to_frame().T), dtype=float)
-    if predicted_returns.ndim == 0:
-        predicted_returns = predicted_returns.reshape(1)
-    elif predicted_returns.ndim > 1:
-        predicted_returns = predicted_returns[0]
-    if len(predicted_returns) < horizon_days:
-        raise ValueError("Model did not return enough forecast steps")
-
-    last_close = float(history["close"].iloc[-1])
-    for step in range(horizon_days):
-        predicted_return = float(np.clip(predicted_returns[step], -0.30, 0.30))
-        next_close = last_close * (1.0 + predicted_return)
+        last_close = float(history["close"].iloc[-1])
+        next_close = round(last_close * (1.0 + r), 2)
         current_date = current_date + NYSE_BDAY
-        prices.append(round(next_close, 2))
+        prices.append(next_close)
         dates.append(current_date.strftime("%Y-%m-%d"))
+        history = _append_synthetic_trading_day(history, next_close, current_date)
+
     return prices, dates
 
 
+def _train_and_metrics(raw_df: pd.DataFrame) -> tuple[RandomForestRegressor, float, float, float, list[str]]:
+    feature_df, target_cols = build_training_features(raw_df)
+    if len(feature_df) < 80:
+        raise ValueError("Not enough clean data after preprocessing")
+    return train_model(feature_df, target_cols)
+
+
+def get_or_train_cached_model(symbol: str, raw_df: pd.DataFrame) -> tuple[RandomForestRegressor, float, float, float, list[str]]:
+    key = symbol.upper()
+    now = time.time()
+    with _model_cache_lock:
+        hit = _model_cache.get(key)
+        if hit is not None and now - hit[0] < MODEL_CACHE_TTL_SEC:
+            _model_cache.move_to_end(key)
+            logger.info("Model cache hit for %s (age %.0fs)", key, now - hit[0])
+            return hit[1], hit[2], hit[3], hit[4], hit[5]
+
+    sym_lock = _symbol_lock(key)
+    with sym_lock:
+        with _model_cache_lock:
+            hit = _model_cache.get(key)
+            if hit is not None and time.time() - hit[0] < MODEL_CACHE_TTL_SEC:
+                _model_cache.move_to_end(key)
+                return hit[1], hit[2], hit[3], hit[4], hit[5]
+
+        logger.info("Training model for %s", key)
+        model, mae, mae_pct, baseline_mae, cols = _train_and_metrics(raw_df)
+        trained_at = time.time()
+        with _model_cache_lock:
+            _model_cache[key] = (trained_at, model, mae, mae_pct, baseline_mae, cols)
+            _model_cache.move_to_end(key)
+            while len(_model_cache) > MODEL_CACHE_MAX_KEYS:
+                _model_cache.popitem(last=False)
+        return model, mae, mae_pct, baseline_mae, cols
+
+
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Market Pulse")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -366,42 +422,49 @@ def root() -> FileResponse:
 
 
 @app.post("/api/predict", response_model=PredictionResponse)
-def predict(payload: PredictionRequest) -> PredictionResponse:
+@limiter.limit("30/minute")
+def predict(request: Request, payload: PredictionRequest) -> PredictionResponse:
+    weighted_sentiment = 0.0
+    volume_ratio = 1.0
     try:
         symbol = normalize_symbol(payload.symbol)
         raw_df, source = fetch_history(symbol)
+        logger.info("predict request symbol=%s horizon=%s", symbol, payload.horizon_days)
 
-        feature_df, target_cols = build_training_features(raw_df, payload.horizon_days, ticker=symbol)
-        if len(feature_df) < 80:
-            raise ValueError("Not enough clean data after preprocessing")
+        model, mae, mae_pct, baseline_mae, feature_cols = get_or_train_cached_model(symbol, raw_df)
 
-        model, mae, mae_pct, baseline_mae, feature_cols = train_model(feature_df, target_cols)
-        weighted_sentiment = 0.0
-        sentiment_volume = 0.0
         try:
             headlines = fetch_live_headlines(symbol)
             if headlines:
-                scored = score_headlines_gemini(headlines, symbol)
+                scored = score_headlines_groq(headlines, symbol)
                 weighted_sentiment = compute_weighted_sentiment(scored)
                 recent_volume = float(raw_df["volume"].iloc[-1])
                 avg_volume = float(raw_df["volume"].tail(20).mean())
                 volume_ratio = recent_volume / avg_volume if avg_volume > 0 else 1.0
-                sentiment_volume = round(weighted_sentiment * volume_ratio, 6)
+                logger.info(
+                    "sentiment symbol=%s headlines=%s weighted=%.4f vol_ratio=%.3f",
+                    symbol,
+                    len(headlines),
+                    weighted_sentiment,
+                    volume_ratio,
+                )
         except Exception:
-            pass
+            logger.exception("sentiment pipeline failed for %s", symbol)
 
         prices, dates = forecast_next_days(
             raw_df,
             model,
             feature_cols,
             payload.horizon_days,
-            ticker=symbol,
             weighted_sentiment=weighted_sentiment,
-            sentiment_volume=sentiment_volume,
+            volume_ratio=volume_ratio,
         )
+        low = [round(p - mae, 2) for p in prices]
+        high = [round(p + mae, 2) for p in prices]
     except HTTPException:
         raise
     except Exception as exc:
+        logger.warning("predict failed: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return PredictionResponse(
@@ -410,6 +473,8 @@ def predict(payload: PredictionRequest) -> PredictionResponse:
         last_close=round(float(raw_df["close"].iloc[-1]), 2),
         predicted_prices=prices,
         predicted_dates=dates,
+        predicted_price_low=low,
+        predicted_price_high=high,
         model_mae=round(mae, 4),
         model_mae_pct=round(mae_pct, 4),
         baseline_mae=round(baseline_mae, 4),

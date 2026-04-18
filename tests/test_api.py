@@ -11,3 +11,8 @@ def test_health():
 def test_predict_rejects_empty_symbol():
     response = client.post('/api/predict', json={'symbol': '', 'horizon_days': 5})
     assert response.status_code == 422
+
+
+def test_predict_rejects_invalid_ticker():
+    response = client.post('/api/predict', json={'symbol': '!!!', 'horizon_days': 5})
+    assert response.status_code == 400
