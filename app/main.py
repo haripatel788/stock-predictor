@@ -1,17 +1,18 @@
 import logging
 import os
-import re
 import threading
 import time
 from collections import OrderedDict
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse
 from pandas.tseries.holiday import (
     AbstractHolidayCalendar,
@@ -29,16 +30,31 @@ from pydantic import BaseModel, Field
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import train_test_split
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
 
+from app.auth import get_optional_user
+from app.forecast_tool import register_forecast_runner
 from app.news import fetch_live_headlines
+from app.routes import admin as admin_routes
+from app.routes import chat as chat_routes
+from app.routes import users as users_routes
+from app.security.audit import AuditEvent, audit_log
+from app.security.headers import SecurityHeadersMiddleware
+from app.security.middleware import AdminPathGuardMiddleware, RequestContextMiddleware
+from app.security.rate_limiter import enforce_predict_limits
+from app.security.sanitizer import sanitize_ticker
 from app.sentiment import compute_weighted_sentiment, score_headlines_groq
+from app.ticker import normalize_symbol
+from app.tiers import (
+    assert_horizon_allowed,
+    effective_tier,
+    enforce_authenticated_daily_forecast,
+    record_forecast_usage,
+    save_forecast_row,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -126,19 +142,6 @@ class NyseHolidayCalendar(AbstractHolidayCalendar):
 
 
 NYSE_BDAY = CustomBusinessDay(calendar=NyseHolidayCalendar())
-
-
-def normalize_symbol(raw_symbol: str) -> str:
-    clean = raw_symbol.strip().upper()
-    if not clean:
-        raise ValueError("Ticker symbol is required")
-    if clean.startswith("^"):
-        if not re.fullmatch(r"\^[A-Z][A-Z0-9.\-]{0,14}", clean):
-            raise ValueError("Invalid index symbol format")
-        return clean
-    if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", clean):
-        raise ValueError("Use 1–10 characters: start with A–Z, then letters, digits, dot, or hyphen")
-    return clean
 
 
 def standardize_dataframe(frame: pd.DataFrame, rows: int) -> pd.DataFrame | None:
@@ -402,60 +405,42 @@ def get_or_train_cached_model(symbol: str, raw_df: pd.DataFrame) -> tuple[Random
         return model, mae, mae_pct, baseline_mae, cols
 
 
-limiter = Limiter(key_func=get_remote_address)
-app = FastAPI(title="Market Pulse")
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+def run_prediction(symbol: str, horizon_days: int) -> PredictionResponse:
+    if os.getenv("KILL_SWITCH", "").lower() in ("1", "true", "yes"):
+        raise HTTPException(status_code=503, detail="Forecasting temporarily disabled")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.get("/")
-def root() -> FileResponse:
-    return FileResponse("public/index.html")
-
-
-@app.post("/api/predict", response_model=PredictionResponse)
-@limiter.limit("30/minute")
-def predict(request: Request, payload: PredictionRequest) -> PredictionResponse:
+    sym = normalize_symbol(symbol.strip())
     weighted_sentiment = 0.0
     volume_ratio = 1.0
     try:
-        symbol = normalize_symbol(payload.symbol)
-        raw_df, source = fetch_history(symbol)
-        logger.info("predict request symbol=%s horizon=%s", symbol, payload.horizon_days)
+        raw_df, source = fetch_history(sym)
+        logger.info("forecast symbol=%s horizon=%s", sym, horizon_days)
 
-        model, mae, mae_pct, baseline_mae, feature_cols = get_or_train_cached_model(symbol, raw_df)
+        model, mae, mae_pct, baseline_mae, feature_cols = get_or_train_cached_model(sym, raw_df)
 
         try:
-            headlines = fetch_live_headlines(symbol)
+            headlines = fetch_live_headlines(sym)
             if headlines:
-                scored = score_headlines_groq(headlines, symbol)
+                scored = score_headlines_groq(headlines, sym)
                 weighted_sentiment = compute_weighted_sentiment(scored)
                 recent_volume = float(raw_df["volume"].iloc[-1])
                 avg_volume = float(raw_df["volume"].tail(20).mean())
                 volume_ratio = recent_volume / avg_volume if avg_volume > 0 else 1.0
                 logger.info(
                     "sentiment symbol=%s headlines=%s weighted=%.4f vol_ratio=%.3f",
-                    symbol,
+                    sym,
                     len(headlines),
                     weighted_sentiment,
                     volume_ratio,
                 )
         except Exception:
-            logger.exception("sentiment pipeline failed for %s", symbol)
+            logger.exception("sentiment pipeline failed for %s", sym)
 
         prices, dates = forecast_next_days(
             raw_df,
             model,
             feature_cols,
-            payload.horizon_days,
+            horizon_days,
             weighted_sentiment=weighted_sentiment,
             volume_ratio=volume_ratio,
         )
@@ -468,7 +453,7 @@ def predict(request: Request, payload: PredictionRequest) -> PredictionResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return PredictionResponse(
-        symbol=symbol,
+        symbol=sym,
         data_source=source,
         last_close=round(float(raw_df["close"].iloc[-1]), 2),
         predicted_prices=prices,
@@ -479,6 +464,93 @@ def predict(request: Request, payload: PredictionRequest) -> PredictionResponse:
         model_mae_pct=round(mae_pct, 4),
         baseline_mae=round(baseline_mae, 4),
     )
+
+
+register_forecast_runner(run_prediction)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    os.makedirs("logs", exist_ok=True)
+    logger.info("MarketPulse startup")
+    yield
+    logger.info("MarketPulse shutdown")
+
+
+_env = (os.getenv("ENVIRONMENT") or "").lower()
+_docs = None if _env in ("production", "prod") else "/docs"
+_redoc = None if _env in ("production", "prod") else "/redoc"
+_openapi = None if _env in ("production", "prod") else "/openapi.json"
+
+app = FastAPI(title="Market Pulse", lifespan=lifespan, docs_url=_docs, redoc_url=_redoc, openapi_url=_openapi)
+
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(AdminPathGuardMiddleware)
+app.add_middleware(RequestContextMiddleware)
+
+if _env in ("production", "prod"):
+    _hosts = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "").split(",") if h.strip()]
+    if _hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=_hosts)
+
+_cors = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors if _cors != ["*"] else ["*"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+)
+
+app.include_router(chat_routes.router, prefix="/api")
+app.include_router(admin_routes.router, prefix="/api")
+app.include_router(users_routes.router, prefix="/api")
+
+
+@app.get("/")
+def root() -> FileResponse:
+    return FileResponse("public/index.html")
+
+
+@app.post("/api/predict", response_model=PredictionResponse)
+def predict(
+    request: Request,
+    payload: PredictionRequest,
+    user: dict | None = Depends(get_optional_user),
+) -> PredictionResponse:
+    tier = effective_tier(user)
+    enforce_predict_limits(request, tier_public=(user is None))
+    symbol = sanitize_ticker(payload.symbol)
+    assert_horizon_allowed(tier, payload.horizon_days)
+    if user:
+        enforce_authenticated_daily_forecast(user)
+
+    result = run_prediction(symbol, payload.horizon_days)
+
+    if user:
+        record_forecast_usage(user)
+        try:
+            save_forecast_row(
+                user,
+                {
+                    "symbol": result.symbol,
+                    "horizon": payload.horizon_days,
+                    "last_close": result.last_close,
+                    "predicted_prices": result.predicted_prices,
+                    "predicted_dates": result.predicted_dates,
+                    "model_mae": result.model_mae,
+                },
+            )
+        except Exception:
+            logger.exception("failed to persist forecast row")
+
+    audit_log(
+        AuditEvent.FORECAST_RUN,
+        request,
+        user_id=user.get("id") if user else None,
+        details={"symbol": result.symbol, "horizon": payload.horizon_days, "tier": tier},
+    )
+    return result
 
 
 @app.get("/health")

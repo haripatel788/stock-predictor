@@ -36,7 +36,11 @@ def test_predict_returns_bands(mock_fetch, mock_train, _mock_news):
     mock_train.return_value = (ConstantReturnModel(), 1.25, 0.5, 2.0, FEATURE_COLS)
 
     client = TestClient(app)
-    res = client.post("/api/predict", json={"symbol": "AAPL", "horizon_days": 3})
+    res = client.post(
+        "/api/predict",
+        json={"symbol": "AAPL", "horizon_days": 3},
+        headers={"User-Agent": "pytest"},
+    )
     assert res.status_code == 200
     data = res.json()
     assert len(data["predicted_prices"]) == 3

@@ -7,4 +7,5 @@ requests==2.32.3
 httpx==0.28.1
 python-dotenv==1.2.2
 newsapi-python==0.2.7
-slowapi==0.1.9
+supabase==2.11.0
+groq==0.18.0

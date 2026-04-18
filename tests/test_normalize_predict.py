@@ -1,6 +1,6 @@
 import pytest
 
-from app.main import normalize_symbol
+from app.ticker import normalize_symbol
 
 
 @pytest.mark.parametrize(
