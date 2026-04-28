@@ -1,5 +1,3 @@
--- MarketPulse core schema (run in Supabase SQL editor or via migration CLI)
--- Requires pgcrypto for gen_random_uuid (enabled by default on Supabase)
 
 create table if not exists public.profiles (
   id uuid references auth.users on delete cascade primary key,
