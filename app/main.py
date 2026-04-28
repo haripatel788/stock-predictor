@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import requests
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse
@@ -516,6 +516,11 @@ app.include_router(forecast_history_routes.router, prefix="/api")
 @app.get("/")
 def root() -> FileResponse:
     return FileResponse("public/index.html")
+
+
+@app.get("/favicon.ico")
+def favicon() -> Response:
+    return Response(status_code=204)
 
 
 @app.post("/api/predict", response_model=PredictionResponse)
