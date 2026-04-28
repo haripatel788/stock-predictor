@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.auth import get_current_user, get_supabase_required
@@ -14,37 +14,46 @@ class WatchlistAdd(BaseModel):
 @router.get("")
 def list_watchlist(user: dict = Depends(get_current_user)) -> dict:
     sb = get_supabase_required()
-    res = (
-        sb.table("watchlists")
-        .select("id,symbol,added_at")
-        .eq("user_id", user["id"])
-        .order("added_at", desc=True)
-        .execute()
-    )
-    return {"items": res.data or []}
+    try:
+        res = (
+            sb.table("watchlists")
+            .select("id,symbol,added_at")
+            .eq("user_id", user["id"])
+            .order("added_at", desc=True)
+            .execute()
+        )
+        return {"items": res.data or []}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Watchlist is temporarily unavailable.") from exc
 
 
 @router.post("")
 def add_watchlist(body: WatchlistAdd, user: dict = Depends(get_current_user)) -> dict:
     sb = get_supabase_required()
     sym = sanitize_ticker(body.symbol)
-    existing = (
-        sb.table("watchlists")
-        .select("id")
-        .eq("user_id", user["id"])
-        .eq("symbol", sym)
-        .limit(1)
-        .execute()
-    )
-    if existing.data:
-        return {"symbol": sym, "already": True}
-    sb.table("watchlists").insert({"user_id": user["id"], "symbol": sym}).execute()
-    return {"symbol": sym, "already": False}
+    try:
+        existing = (
+            sb.table("watchlists")
+            .select("id")
+            .eq("user_id", user["id"])
+            .eq("symbol", sym)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            return {"symbol": sym, "already": True}
+        sb.table("watchlists").insert({"user_id": user["id"], "symbol": sym}).execute()
+        return {"symbol": sym, "already": False}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Watchlist is temporarily unavailable.") from exc
 
 
 @router.delete("")
 def remove_watchlist(symbol: str, user: dict = Depends(get_current_user)) -> dict:
     sb = get_supabase_required()
     sym = sanitize_ticker(symbol)
-    sb.table("watchlists").delete().eq("user_id", user["id"]).eq("symbol", sym).execute()
-    return {"removed": sym}
+    try:
+        sb.table("watchlists").delete().eq("user_id", user["id"]).eq("symbol", sym).execute()
+        return {"removed": sym}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Watchlist is temporarily unavailable.") from exc

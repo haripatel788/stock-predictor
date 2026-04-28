@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.auth import get_current_user, get_supabase_required
 
@@ -11,14 +11,17 @@ def forecast_history(
     limit: int = Query(default=50, ge=1, le=200),
 ) -> dict:
     sb = get_supabase_required()
-    res = (
-        sb.table("forecasts")
-        .select(
-            "id,symbol,horizon,last_close,predicted_prices,predicted_dates,model_mae,created_at"
+    try:
+        res = (
+            sb.table("forecasts")
+            .select(
+                "id,symbol,horizon,last_close,predicted_prices,predicted_dates,model_mae,created_at"
+            )
+            .eq("user_id", user["id"])
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
         )
-        .eq("user_id", user["id"])
-        .order("created_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    return {"items": res.data or []}
+        return {"items": res.data or []}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Forecast history is temporarily unavailable.") from exc

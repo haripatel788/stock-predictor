@@ -539,7 +539,10 @@ def predict(
     result = run_prediction(symbol, payload.horizon_days)
 
     if user:
-        record_forecast_usage(user)
+        try:
+            record_forecast_usage(user)
+        except Exception:
+            logger.exception("failed to update daily forecast usage")
         try:
             save_forecast_row(
                 user,
