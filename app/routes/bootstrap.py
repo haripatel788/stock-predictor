@@ -17,6 +17,8 @@ def bootstrap() -> dict:
         "true",
         "yes",
     )
+    oauth_google = (os.getenv("SUPABASE_OAUTH_GOOGLE") or "").strip().lower() in ("1", "true", "yes")
+    oauth_github = (os.getenv("SUPABASE_OAUTH_GITHUB") or "").strip().lower() in ("1", "true", "yes")
     return {
         "auth": {
             "enabled": bool(url and anon),
@@ -25,6 +27,10 @@ def bootstrap() -> dict:
         },
         "chat": {
             "allow_public": allow_public_chat,
+        },
+        "oauth": {
+            "google": oauth_google,
+            "github": oauth_github,
         },
         "tier_limits": TIER_LIMITS,
     }

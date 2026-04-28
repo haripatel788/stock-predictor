@@ -1109,12 +1109,52 @@
           <button type="button" class="run-btn" id="accSignIn" style="flex:1;min-width:120px;">Sign in</button>
           <button type="button" class="ghost-btn" id="accSignUp" style="flex:1;min-width:120px;">Create account</button>
         </div>
+        <div class="auth-row" id="accOauthRow" style="margin-top:8px;">
+          <button type="button" class="ghost-btn" id="accGoogleBtn" style="flex:1;min-width:120px;">Continue with Google</button>
+          <button type="button" class="ghost-btn" id="accGithubBtn" style="flex:1;min-width:120px;">Continue with GitHub</button>
+        </div>
+        <button type="button" class="ghost-btn" id="accForgotBtn" style="margin-top:12px;width:100%;">Forgot password</button>
+        <div class="error-msg" id="accForgotMsg" style="display:none;margin-top:10px;"></div>
       </div>
       <div class="auth-stack" id="authSignedIn" style="display:none;">
         <p style="font-family:var(--mono);font-size:12px;color:var(--text2);" id="accEmailLine"></p>
         <span class="tier-badge" id="accTierBadge">tier</span>
+        <div class="auth-row">
+          <span class="tier-badge" id="accEmailVerifiedBadge">Email · unverified</span>
+          <button type="button" class="ghost-btn" id="accResendVerify" style="min-width:160px;">Resend verification</button>
+        </div>
+        <div class="error-msg" id="accVerifyMsg" style="display:none;margin-top:8px;"></div>
+        <div class="form-field" style="margin-top:16px;">
+          <label class="form-label" for="accDisplayName">Display name</label>
+          <input id="accDisplayName" class="form-input" type="text" maxlength="60" placeholder="How your name appears" style="text-transform:none;font-size:15px;" />
+        </div>
+        <div class="error-msg" id="accProfileMsg" style="display:none;margin-top:8px;"></div>
+        <button type="button" class="ghost-btn" id="accSaveProfile" style="margin-top:10px;">Save profile</button>
+        <div class="form-field" style="margin-top:18px;">
+          <label class="form-label" for="accNewPassword">New password</label>
+          <input id="accNewPassword" class="form-input" type="password" minlength="8" placeholder="At least 8 characters" style="text-transform:none;font-size:15px;" />
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="accConfirmPassword">Confirm new password</label>
+          <input id="accConfirmPassword" class="form-input" type="password" minlength="8" placeholder="Retype password" style="text-transform:none;font-size:15px;" />
+        </div>
+        <div class="error-msg" id="accPwMsg" style="display:none;margin-top:8px;"></div>
+        <button type="button" class="ghost-btn" id="accChangePassword" style="margin-top:10px;">Change password</button>
+        <p style="margin-top:14px;font-family:var(--mono);font-size:11px;color:var(--text3);" id="accSessionMeta"></p>
         <p style="margin-top:16px;font-size:13px;color:var(--text3);line-height:1.6;font-weight:300;" id="accLimitsLine"></p>
-        <button type="button" class="ghost-btn danger" id="accSignOut" style="margin-top:20px;">Sign out</button>
+        <div class="auth-row" style="margin-top:20px;">
+          <button type="button" class="ghost-btn danger" id="accSignOut" style="flex:1;min-width:140px;">Sign out this device</button>
+          <button type="button" class="ghost-btn danger" id="accSignOutAll" style="flex:1;min-width:140px;">Sign out all devices</button>
+        </div>
+        <div id="accAdminTools" style="display:none;margin-top:24px;border-top:1px solid var(--rule2);padding-top:16px;">
+          <div class="sidebar-heading" style="margin-bottom:12px;">Admin tools</div>
+          <button type="button" class="ghost-btn" id="accAdminRefresh" style="width:100%;margin-bottom:10px;">Refresh users</button>
+          <div class="error-msg" id="accAdminMsg" style="display:none;margin-bottom:10px;"></div>
+          <table class="data-tbl" id="accAdminTable" style="display:none;">
+            <thead><tr><th>Email</th><th>Tier</th><th>Action</th></tr></thead>
+            <tbody id="accAdminBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -1145,8 +1185,18 @@
   let supa = /** @type {ReturnType<typeof createClient> | null} */ (null);
   let accessToken = /** @type {string | null} */ (null);
   let profile = /** @type {any} */ (null);
+  let sessionInfo = /** @type {{ issuedAt: string | null, expiresAt: string | null }} */ ({ issuedAt: null, expiresAt: null });
+  let recoveryMode = false;
   let currentTab = 'forecast';
   const SIDEBAR_WIDTH_KEY = 'marketpulse.sidebarWidth';
+
+  function toSessionInfo(session) {
+    if (!session) return { issuedAt: null, expiresAt: null };
+    return {
+      issuedAt: session.user?.last_sign_in_at || null,
+      expiresAt: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
+    };
+  }
 
   function applySidebarWidth(width) {
     const clamped = Math.max(260, Math.min(620, Math.round(width)));
@@ -1268,7 +1318,17 @@
 
   async function apiFetch(path, opts = {}) {
     const headers = { ...authHeadersJson(), ...(opts.headers || {}) };
-    return fetch(path, { ...opts, headers });
+    const res = await fetch(path, { ...opts, headers });
+    if (res.status === 401 && accessToken) {
+      accessToken = null;
+      profile = null;
+      recoveryMode = false;
+      sessionInfo = { issuedAt: null, expiresAt: null };
+      switchTab('account');
+      renderAccountPanel();
+      applyHorizonLimits();
+    }
+    return res;
   }
 
   function normalizeTickerInput(raw) {
@@ -1323,14 +1383,71 @@
     document.getElementById('authDisabled').style.display = authOn ? 'none' : 'block';
     document.getElementById('authSignedOut').style.display = authOn && !accessToken ? 'block' : 'none';
     document.getElementById('authSignedIn').style.display = authOn && accessToken ? 'block' : 'none';
+    const oauthCfg = bootstrap?.oauth || {};
+    document.getElementById('accGoogleBtn').style.display = oauthCfg.google ? 'inline-block' : 'none';
+    document.getElementById('accGithubBtn').style.display = oauthCfg.github ? 'inline-block' : 'none';
+    document.getElementById('accOauthRow').style.display = (oauthCfg.google || oauthCfg.github) ? 'flex' : 'none';
     if (accessToken && profile) {
       document.getElementById('accEmailLine').textContent = profile.email || profile.id || '—';
       document.getElementById('accTierBadge').textContent = `Tier · ${profile.tier || 'free'}`;
+      const verified = !!profile.email_verified;
+      document.getElementById('accEmailVerifiedBadge').textContent = verified ? 'Email · verified' : 'Email · unverified';
+      document.getElementById('accResendVerify').style.display = verified ? 'none' : 'inline-block';
+      document.getElementById('accDisplayName').value = profile.display_name || '';
+      const issued = sessionInfo.issuedAt ? new Date(sessionInfo.issuedAt).toLocaleString() : '—';
+      const exp = sessionInfo.expiresAt ? new Date(sessionInfo.expiresAt).toLocaleString() : '—';
+      const recLabel = recoveryMode ? ' · Recovery session active' : '';
+      document.getElementById('accSessionMeta').textContent = `Session issued: ${issued} · Expires: ${exp}${recLabel}`;
       const L = profile.limits || {};
       const reset = profile.forecasts_today_reset || '—';
       document.getElementById('accLimitsLine').textContent =
         `Forecast runs today: ${profile.forecasts_today ?? 0} / ${L.forecasts_per_day ?? '—'} (counter date: ${reset}). Max horizon: ${L.max_horizon ?? '—'} trading days.`;
+      document.getElementById('accAdminTools').style.display = profile.tier === 'admin' ? 'block' : 'none';
     }
+  }
+
+  async function loadAdminUsers() {
+    const msg = document.getElementById('accAdminMsg');
+    const tbl = document.getElementById('accAdminTable');
+    const body = document.getElementById('accAdminBody');
+    msg.style.display = 'none';
+    tbl.style.display = 'none';
+    body.innerHTML = '';
+    const r = await apiFetch('/api/admin/users');
+    const j = await r.json().catch(() => null);
+    if (!r.ok) {
+      msg.textContent = formatApiError(j, r.status);
+      msg.style.display = 'block';
+      return;
+    }
+    const items = j.items || [];
+    if (!items.length) return;
+    tbl.style.display = 'table';
+    items.forEach((u) => {
+      const tr = document.createElement('tr');
+      const current = String(u.tier || 'free');
+      tr.innerHTML = `<td>${u.email || u.id}</td><td><select data-uid="${u.id}" class="form-input" style="font-size:12px;padding:6px 8px;text-transform:none;"><option value="free"${current === 'free' ? ' selected' : ''}>free</option><option value="pro"${current === 'pro' ? ' selected' : ''}>pro</option><option value="admin"${current === 'admin' ? ' selected' : ''}>admin</option></select></td><td><button type="button" class="ghost-btn admin-save" data-uid="${u.id}">Save</button></td>`;
+      body.appendChild(tr);
+    });
+    body.querySelectorAll('.admin-save').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const uid = b.getAttribute('data-uid');
+        const sel = body.querySelector(`select[data-uid="${uid}"]`);
+        const tier = sel ? sel.value : 'free';
+        const rr = await apiFetch(`/api/admin/users/${encodeURIComponent(uid)}/tier`, {
+          method: 'PATCH',
+          body: JSON.stringify({ tier }),
+        });
+        const jj = await rr.json().catch(() => null);
+        if (!rr.ok) {
+          msg.textContent = formatApiError(jj, rr.status);
+          msg.style.display = 'block';
+          return;
+        }
+        msg.textContent = 'Tier updated.';
+        msg.style.display = 'block';
+      });
+    });
   }
 
   function switchTab(tab) {
@@ -1728,13 +1845,160 @@
     }
   });
 
+  document.getElementById('accForgotBtn').addEventListener('click', async () => {
+    const msg = document.getElementById('accForgotMsg');
+    msg.style.display = 'none';
+    const email = document.getElementById('accEmail').value.trim();
+    if (!supa) return;
+    if (!email) {
+      msg.textContent = 'Enter your email first, then click Forgot password.';
+      msg.style.display = 'block';
+      return;
+    }
+    const { error } = await supa.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/`,
+    });
+    if (error) {
+      msg.textContent = error.message;
+      msg.style.display = 'block';
+      return;
+    }
+    msg.textContent = 'Password reset email sent. Open the link in your inbox, then set a new password here.';
+    msg.style.display = 'block';
+  });
+
+  document.getElementById('accGoogleBtn').addEventListener('click', async () => {
+    if (!supa) return;
+    const { error } = await supa.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/` },
+    });
+    if (error) {
+      const err = document.getElementById('accErr');
+      err.textContent = error.message;
+      err.style.display = 'block';
+    }
+  });
+
+  document.getElementById('accGithubBtn').addEventListener('click', async () => {
+    if (!supa) return;
+    const { error } = await supa.auth.signInWithOAuth({
+      provider: 'github',
+      options: { redirectTo: `${window.location.origin}/` },
+    });
+    if (error) {
+      const err = document.getElementById('accErr');
+      err.textContent = error.message;
+      err.style.display = 'block';
+    }
+  });
+
   document.getElementById('accSignOut').addEventListener('click', async () => {
-    if (supa) await supa.auth.signOut();
+    if (supa) await supa.auth.signOut({ scope: 'local' });
     accessToken = null;
     profile = null;
+    recoveryMode = false;
+    sessionInfo = { issuedAt: null, expiresAt: null };
     applyHorizonLimits();
     renderAccountPanel();
   });
+
+  document.getElementById('accSignOutAll').addEventListener('click', async () => {
+    if (!supa) return;
+    await supa.auth.signOut({ scope: 'global' });
+    accessToken = null;
+    profile = null;
+    recoveryMode = false;
+    sessionInfo = { issuedAt: null, expiresAt: null };
+    applyHorizonLimits();
+    renderAccountPanel();
+  });
+
+  document.getElementById('accSaveProfile').addEventListener('click', async () => {
+    const msg = document.getElementById('accProfileMsg');
+    const btn = document.getElementById('accSaveProfile');
+    msg.style.display = 'none';
+    if (!accessToken) return;
+    const displayNameRaw = document.getElementById('accDisplayName').value.trim();
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    try {
+      const r = await apiFetch('/api/users/me', {
+        method: 'PATCH',
+        body: JSON.stringify({ display_name: displayNameRaw || null }),
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j) throw new Error(formatApiError(j, r.status));
+      profile = j;
+      msg.textContent = 'Profile updated.';
+      msg.style.display = 'block';
+      renderAccountPanel();
+      applyHorizonLimits();
+    } catch (e) {
+      msg.textContent = String(e.message || e);
+      msg.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save profile';
+    }
+  });
+
+  document.getElementById('accChangePassword').addEventListener('click', async () => {
+    const msg = document.getElementById('accPwMsg');
+    const btn = document.getElementById('accChangePassword');
+    msg.style.display = 'none';
+    if (!supa || !accessToken) return;
+    const pw1 = document.getElementById('accNewPassword').value;
+    const pw2 = document.getElementById('accConfirmPassword').value;
+    if (pw1.length < 8) {
+      msg.textContent = 'Password must be at least 8 characters.';
+      msg.style.display = 'block';
+      return;
+    }
+    if (pw1 !== pw2) {
+      msg.textContent = 'Passwords do not match.';
+      msg.style.display = 'block';
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Updating…';
+    try {
+      const { error } = await supa.auth.updateUser({ password: pw1 });
+      if (error) throw error;
+      document.getElementById('accNewPassword').value = '';
+      document.getElementById('accConfirmPassword').value = '';
+      recoveryMode = false;
+      msg.textContent = 'Password updated successfully.';
+      msg.style.display = 'block';
+      renderAccountPanel();
+    } catch (e) {
+      msg.textContent = String(e.message || e);
+      msg.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Change password';
+    }
+  });
+
+  document.getElementById('accResendVerify').addEventListener('click', async () => {
+    const msg = document.getElementById('accVerifyMsg');
+    msg.style.display = 'none';
+    if (!supa || !profile?.email) return;
+    const { error } = await supa.auth.resend({
+      type: 'signup',
+      email: profile.email,
+      options: { emailRedirectTo: `${window.location.origin}/` },
+    });
+    if (error) {
+      msg.textContent = error.message;
+      msg.style.display = 'block';
+      return;
+    }
+    msg.textContent = 'Verification email sent.';
+    msg.style.display = 'block';
+  });
+
+  document.getElementById('accAdminRefresh').addEventListener('click', () => loadAdminUsers());
 
   function defaultBootstrap() {
     return {
@@ -1767,17 +2031,35 @@
       supa = createClient(bootstrap.auth.supabase_url, bootstrap.auth.supabase_anon_key, {
         auth: { persistSession: true, autoRefreshToken: true },
       });
-      supa.auth.onAuthStateChange((_event, session) => {
+      supa.auth.onAuthStateChange((event, session) => {
         accessToken = session?.access_token ?? null;
+        sessionInfo = toSessionInfo(session);
+        recoveryMode = event === 'PASSWORD_RECOVERY';
+        if (recoveryMode) {
+          switchTab('account');
+          const msg = document.getElementById('accPwMsg');
+          msg.textContent = 'Recovery link verified. Set your new password below.';
+          msg.style.display = 'block';
+        }
         refreshProfile();
         if (currentTab === 'watchlist') loadWatchlist();
         if (currentTab === 'history') loadHistory();
+        if (currentTab === 'account') {
+          const verifyMsg = document.getElementById('accVerifyMsg');
+          if (event === 'USER_UPDATED' && verifyMsg && verifyMsg.style.display !== 'none') {
+            verifyMsg.textContent = 'Email/session updated.';
+          }
+          if (profile?.tier === 'admin') loadAdminUsers();
+        }
       });
       const { data: { session } } = await supa.auth.getSession();
       accessToken = session?.access_token ?? null;
+      sessionInfo = toSessionInfo(session);
     } else {
       supa = null;
       accessToken = null;
+      recoveryMode = false;
+      sessionInfo = { issuedAt: null, expiresAt: null };
     }
     await refreshProfile();
     applyHorizonLimits();
