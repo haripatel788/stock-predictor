@@ -52,20 +52,25 @@ async def get_optional_user(
         uid = res.user.id
         email = getattr(res.user, "email", None)
         email_confirmed = bool(getattr(res.user, "email_confirmed_at", None))
-        prof = sb.table("profiles").select("*").eq("id", uid).limit(1).execute()
-        rows = prof.data or []
-        data = rows[0] if rows else None
-        if not data:
-            return {
-                "id": uid,
-                "email": email,
-                "tier": "free",
-                "display_name": None,
-                "email_verified": email_confirmed,
-                "forecasts_today": 0,
-                "forecasts_today_reset": None,
-            }
-        return {**data, "email_verified": email_confirmed}
+        default_profile = {
+            "id": uid,
+            "email": email,
+            "tier": "free",
+            "display_name": None,
+            "email_verified": email_confirmed,
+            "forecasts_today": 0,
+            "forecasts_today_reset": None,
+        }
+        try:
+            prof = sb.table("profiles").select("*").eq("id", uid).limit(1).execute()
+            rows = prof.data or []
+            data = rows[0] if rows else None
+            if not data:
+                return default_profile
+            return {**data, "email_verified": email_confirmed}
+        except Exception:
+            # Keep valid JWT sessions usable even if profile reads fail.
+            return default_profile
     except Exception:
         audit_log(AuditEvent.INVALID_TOKEN, request)
         return None
