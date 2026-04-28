@@ -201,7 +201,7 @@
 
     .body-wrap {
       display: grid;
-      grid-template-columns: 300px 1fr;
+      grid-template-columns: var(--sidebar-width, 300px) 8px 1fr;
       min-height: calc(100vh - 36px - 107px);
     }
 
@@ -213,6 +213,26 @@
       gap: 36px;
       background: var(--paper);
     }
+    .sidebar-resizer {
+      position: relative;
+      cursor: col-resize;
+      background: transparent;
+      user-select: none;
+      touch-action: none;
+    }
+    .sidebar-resizer::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 1px;
+      transform: translateX(-50%);
+      background: var(--rule2);
+      transition: background 0.15s;
+    }
+    .sidebar-resizer:hover::before,
+    .sidebar-resizer.dragging::before { background: var(--accent); }
 
     .sidebar-section {}
     .sidebar-heading {
@@ -774,6 +794,7 @@
 
     @media (max-width: 860px) {
       .body-wrap { grid-template-columns: 1fr; }
+      .sidebar-resizer { display: none; }
       .sidebar { border-right: none; border-bottom: 1px solid var(--rule2); }
       .masthead-top, .masthead-main { padding-left: 24px; padding-right: 24px; }
       .brand-name { font-size: 36px; }
@@ -937,6 +958,8 @@
     </div>
 
   </aside>
+
+  <div class="sidebar-resizer" id="sidebarResizer" aria-hidden="true" title="Drag to resize sidebar"></div>
 
   <main class="main-content">
 
@@ -1114,14 +1137,52 @@
   </div>
 </footer>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script type="module">
-  import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/+esm';
+  const createClient = window.supabase.createClient;
 
   let bootstrap = /** @type {any} */ (null);
   let supa = /** @type {ReturnType<typeof createClient> | null} */ (null);
   let accessToken = /** @type {string | null} */ (null);
   let profile = /** @type {any} */ (null);
   let currentTab = 'forecast';
+  const SIDEBAR_WIDTH_KEY = 'marketpulse.sidebarWidth';
+
+  function applySidebarWidth(width) {
+    const clamped = Math.max(260, Math.min(620, Math.round(width)));
+    document.documentElement.style.setProperty('--sidebar-width', `${clamped}px`);
+    return clamped;
+  }
+
+  function initSidebarResizer() {
+    const resizer = document.getElementById('sidebarResizer');
+    if (!resizer) return;
+    const saved = Number.parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) || '', 10);
+    if (Number.isFinite(saved)) applySidebarWidth(saved);
+    let dragging = false;
+    function onMove(e) {
+      if (!dragging) return;
+      const next = applySidebarWidth(e.clientX);
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next));
+    }
+    function stopDrag() {
+      if (!dragging) return;
+      dragging = false;
+      resizer.classList.remove('dragging');
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', stopDrag);
+    }
+    resizer.addEventListener('pointerdown', (e) => {
+      if (window.matchMedia('(max-width: 860px)').matches) return;
+      dragging = true;
+      resizer.classList.add('dragging');
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', stopDrag);
+      e.preventDefault();
+    });
+  }
+
+  initSidebarResizer();
 
   document.getElementById('mastheadDate').textContent = new Date().toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -1173,7 +1234,24 @@
   function formatApiError(data, status) {
     if (!data) return `HTTP ${status}`;
     const d = data.detail;
-    if (typeof d === 'string') return d;
+    if (status === 429 && d && typeof d === 'object' && !Array.isArray(d)) {
+      const scope = d.scope || '';
+      const retrySec = Number(d.retry_after_seconds || 0);
+      if (scope === 'predict_daily_public') {
+        return 'Daily guest forecast limit reached (3/day). Sign in on the Account tab for higher limits, or try again tomorrow.';
+      }
+      if (retrySec > 0) {
+        const mins = Math.ceil(retrySec / 60);
+        return `Rate limit reached. Try again in about ${mins} minute${mins === 1 ? '' : 's'}.`;
+      }
+      return 'Rate limit reached. Please wait a bit and try again.';
+    }
+    if (typeof d === 'string') {
+      if (d === 'Unable to load data for this ticker right now.') {
+        return 'Market data is unavailable for that ticker right now. Double-check the symbol (e.g. AAPL, MSFT, SPY) or try another ticker.';
+      }
+      return d;
+    }
     if (Array.isArray(d)) return d.map((x) => x.msg || JSON.stringify(x)).join('; ');
     try {
       return JSON.stringify(data);

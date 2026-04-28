@@ -20,11 +20,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "CSP_HEADER",
             (
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "script-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; "
                 "font-src 'self' https://fonts.gstatic.com; "
                 "img-src 'self' data:; "
-                "connect-src 'self' https://api.groq.com https://newsapi.org; "
+                "connect-src 'self' https://api.groq.com https://newsapi.org https://*.supabase.co wss://*.supabase.co; "
                 "frame-ancestors 'none'"
             ),
         )
