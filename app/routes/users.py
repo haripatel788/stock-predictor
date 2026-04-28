@@ -9,6 +9,8 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.get("/me")
 def read_me(user: dict = Depends(get_current_user)) -> dict:
     tier = effective_tier(user)
+    if tier not in TIER_LIMITS:
+        tier = "free"
     lim = TIER_LIMITS[tier]
     return {
         "id": user.get("id"),

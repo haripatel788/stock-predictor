@@ -1458,17 +1458,28 @@
     const text = input.value.trim();
     if (!text) return;
     out.style.display = 'block';
+    if (!accessToken && !bootstrap?.chat?.allow_public) {
+      out.textContent = 'Chat requires sign-in on the Account tab (or CHAT_ALLOW_PUBLIC=1 for local demos).';
+      return;
+    }
     out.textContent = 'Thinking…';
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
     try {
       const r = await apiFetch('/api/chat', {
         method: 'POST',
         body: JSON.stringify({ messages: [{ role: 'user', content: text }] }),
+        signal: ctrl.signal,
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(formatApiError(j, r.status));
       out.textContent = j.reply || '(empty reply)';
     } catch (e) {
-      out.textContent = String(e.message || e);
+      out.textContent = e.name === 'AbortError'
+        ? 'Chat request timed out after 25s. Try a shorter prompt or try again.'
+        : String(e.message || e);
+    } finally {
+      clearTimeout(timer);
     }
   });
 
@@ -1647,9 +1658,33 @@
     renderAccountPanel();
   });
 
+  function defaultBootstrap() {
+    return {
+      auth: { enabled: false, supabase_url: '', supabase_anon_key: '' },
+      chat: { allow_public: false },
+      tier_limits: { public: { max_horizon: 7, forecasts_per_day: 3 } },
+    };
+  }
+
   async function init() {
-    const br = await fetch('/api/bootstrap');
-    bootstrap = await br.json();
+    bootstrap = defaultBootstrap();
+    try {
+      const br = await fetch('/api/bootstrap', { cache: 'no-store' });
+      if (!br.ok) throw new Error(`bootstrap HTTP ${br.status}`);
+      const payload = await br.json();
+      if (!payload || typeof payload !== 'object') throw new Error('bootstrap payload is invalid');
+      const tierLimits = payload.tier_limits && typeof payload.tier_limits === 'object'
+        ? payload.tier_limits
+        : bootstrap.tier_limits;
+      bootstrap = {
+        ...bootstrap,
+        ...payload,
+        auth: { ...bootstrap.auth, ...(payload.auth || {}) },
+        tier_limits: tierLimits,
+      };
+    } catch (err) {
+      console.warn('Bootstrap request failed; continuing in offline-safe mode.', err);
+    }
     if (bootstrap.auth?.enabled) {
       supa = createClient(bootstrap.auth.supabase_url, bootstrap.auth.supabase_anon_key, {
         auth: { persistSession: true, autoRefreshToken: true },
